@@ -4,6 +4,8 @@ Markdown directory editor with sidebar navigation, live preview, and dual-save s
 
 ## Overview
 
+md-html is a skill that enables browser-based editing of Markdown files and management of all HTML files within a directory.
+
 md-html combines two workflows into one seamless experience:
 
 - **Live edit & sync** — renders each `.md` file into an editable, self-contained HTML with split-view editor and live preview. Press Ctrl+S to save edits back to both `.md` and `.html` files on disk simultaneously.
@@ -42,7 +44,7 @@ The result: one browser page where you navigate between all your markdown docume
 
 ### Install
 
-Clone the repository and you're ready to use it:
+Clone the repository and copy it to your skill directory to use:
 
 ```bash
 git clone https://github.com/Lana-Lan/md-html.git
