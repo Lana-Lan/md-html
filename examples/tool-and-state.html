@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Code 工具系统与状态管理</title>
+
+<!-- Mermaid -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+
+<!-- markdown-it -->
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+
+<!-- highlight.js -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css" id="hljs-light-theme">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" id="hljs-dark-theme" disabled>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+
+<style>
+
+:root {
+  --bg: #ffffff;
+  --text: #1a1a1a;
+  --heading: #111111;
+  --link: #0366d6;
+  --code-bg: #f6f8fa;
+  --border: #e1e4e8;
+  --toc-bg: #f8f9fa;
+  --quote-border: #dfe2e5;
+  --table-border: #c6c8cb;
+  --overlay-bg: rgba(255,255,255,0.97);
+  --muted: #6a737d;
+  --success: #28a745;
+}
+
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --text: #c9d1d9;
+  --heading: #f0f6fc;
+  --link: #58a6ff;
+  --code-bg: #161b22;
+  --border: #30363d;
+  --toc-bg: #161b22;
+  --quote-border: #3b434b;
+  --table-border: #3b434b;
+  --overlay-bg: rgba(13,17,23,0.97);
+  --muted: #8b949e;
+  --success: #3fb950;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 100;
+  height: 44px;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-status {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  white-space: nowrap;
+}
+
+.save-status.connected {
+  color: var(--success);
+  background: rgba(40, 167, 69, 0.1);
+  font-weight: 500;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.mode-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.mode-btn:last-child { border-right: none; }
+.mode-btn.active-mode { background: var(--link); color: #fff; }
+.mode-btn:hover:not(.active-mode) { background: var(--code-bg); }
+
+.topbar-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.topbar-btn:hover { background: var(--code-bg); }
+.topbar-btn.save-ready { border-color: var(--success); color: var(--success); }
+
+.toc-sidebar {
+  position: fixed;
+  left: 0;
+  top: 44px;
+  width: 260px;
+  height: calc(100vh - 44px);
+  background: var(--toc-bg);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  font-size: 13px;
+  display: none;
+  z-index: 90;
+}
+.toc-sidebar.open { display: block; }
+
+.toc-link {
+  display: block;
+  padding: 3px 0;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+  line-height: 1.4;
+}
+.toc-link:hover { color: var(--link); }
+.toc-h2 { padding-left: 0; font-weight: 500; }
+.toc-h3 { padding-left: 16px; }
+.toc-h4 { padding-left: 32px; }
+
+.main-content {
+  height: calc(100vh - 44px);
+  transition: margin-left 0.2s;
+}
+.main-content.with-toc { margin-left: 260px; }
+
+.split-container {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.editor-pane {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+  border-right: 2px solid var(--border);
+  overflow: hidden;
+  transition: width 0.15s;
+}
+
+.preview-pane {
+  width: 50%;
+  overflow-y: auto;
+  padding: 40px 24px;
+  transition: width 0.15s;
+}
+
+.editor-pane textarea {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  padding: 20px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-y: auto;
+}
+
+.md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 {
+  color: var(--heading);
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.md-body h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md-body h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md-body h3 { font-size: 1.25em; }
+.md-body h4 { font-size: 1em; }
+.md-body p { margin-bottom: 16px; }
+.md-body a { color: var(--link); text-decoration: none; }
+.md-body a:hover { text-decoration: underline; }
+.md-body strong { font-weight: 600; }
+
+.md-body ul, .md-body ol {
+  margin-bottom: 16px;
+  padding-left: 2em;
+}
+.md-body li { margin-bottom: 4px; }
+.md-body li.task-list-item { list-style: none; margin-left: -1.5em; }
+
+.md-body blockquote {
+  padding: 0 1em;
+  margin-bottom: 16px;
+  color: var(--muted);
+  border-left: 4px solid var(--quote-border);
+}
+
+.md-body code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  background: var(--code-bg);
+  border-radius: 3px;
+}
+
+.md-body pre {
+  padding: 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  background: var(--code-bg);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  position: relative;
+}
+.md-body pre code {
+  padding: 0;
+  margin: 0;
+  font-size: 100%;
+  background: none;
+  border-radius: 0;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.md-body pre:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { background: var(--border); }
+
+.md-body table {
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  width: 100%;
+}
+.md-body table th, .md-body table td {
+  padding: 6px 13px;
+  border: 1px solid var(--table-border);
+}
+.md-body table th { font-weight: 600; background: var(--toc-bg); }
+.md-body table tr:nth-child(even) { background: var(--toc-bg); }
+
+.md-body img { max-width: 100%; border-radius: 4px; }
+.md-body hr { height: 2px; padding: 0; margin: 24px 0; background: var(--border); border: 0; }
+
+.mermaid-wrapper {
+  text-align: center;
+  margin: 16px 0;
+  cursor: pointer;
+  position: relative;
+}
+.mermaid-wrapper .zoom-hint {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.mermaid-wrapper:hover .zoom-hint { opacity: 1; }
+.mermaid-wrapper svg { max-width: 100%; }
+
+.mermaid-error {
+  color: #d73a49;
+  font-family: monospace;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: var(--code-bg);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.svg-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: var(--overlay-bg);
+  z-index: 200;
+  cursor: grab;
+  overflow: hidden;
+}
+.svg-overlay.active { display: flex; align-items: center; justify-content: center; }
+
+.svg-overlay .overlay-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text);
+  opacity: 0.5;
+  z-index: 210;
+}
+.svg-overlay .overlay-close:hover { opacity: 1; }
+
+.svg-overlay .overlay-controls {
+  position: absolute;
+  bottom: 16px; right: 16px;
+  display: flex; gap: 8px;
+  z-index: 210;
+}
+.svg-overlay .overlay-btn {
+  background: var(--toc-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+}
+.svg-overlay .overlay-btn:hover { background: var(--border); }
+
+.svg-overlay .svg-container {
+  transform-origin: center center;
+  transition: none;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.svg-overlay .zoom-level {
+  position: absolute;
+  bottom: 16px; left: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  z-index: 210;
+}
+
+@media print {
+  .topbar, .toc-sidebar, .copy-btn, .zoom-hint, .svg-overlay,
+  .editor-pane, .mode-group, .save-status { display: none !important; }
+  .preview-pane { width: 100% !important; padding: 0 !important; }
+  .main-content { margin-left: 0 !important; height: auto !important; }
+  body { height: auto; overflow: visible; }
+  .split-container { display: block !important; }
+}
+
+@media (max-width: 768px) {
+  .toc-sidebar { width: 200px; }
+  .main-content.with-toc { margin-left: 0; }
+  .topbar-actions { flex-wrap: wrap; gap: 4px; }
+  .topbar-left { max-width: 120px; }
+  .split-container { flex-direction: column; }
+  .editor-pane { width: 100% !important; height: 50%; border-right: none; border-bottom: 2px solid var(--border); }
+  .preview-pane { width: 100% !important; height: 50%; }
+}
+
+</style>
+</head>
+<body data-theme="light">
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-title">Claude Code 工具系统与状态管理</span>
+    <span class="save-status" id="save-status">Checking server...</span>
+  </div>
+  <div class="topbar-actions">
+    <div class="mode-group">
+      <button class="mode-btn active-mode" data-mode="split">Split</button>
+      <button class="mode-btn" data-mode="view">View</button>
+      <button class="mode-btn" data-mode="edit">Edit</button>
+    </div>
+    <button class="topbar-btn" id="save-btn">Save</button>
+    <button class="topbar-btn" id="download-btn">Download</button>
+    <button class="topbar-btn" id="toc-toggle">TOC</button>
+    <button class="topbar-btn" id="theme-toggle">Dark</button>
+  </div>
+</div>
+
+<!-- TOC sidebar -->
+<div class="toc-sidebar" id="toc-sidebar"></div>
+
+<!-- Main content -->
+<div class="main-content" id="main-content">
+  <div class="split-container" id="split-container">
+    <div class="editor-pane" id="editor-pane">
+      <textarea id="editor" spellcheck="false"></textarea>
+    </div>
+    <div class="preview-pane" id="preview-pane">
+      <div class="md-body" id="preview-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SVG Zoom overlay -->
+<div class="svg-overlay" id="svg-overlay">
+  <button class="overlay-close" id="overlay-close">&times;</button>
+  <div class="svg-container" id="svg-container"></div>
+  <div class="zoom-level" id="zoom-level">100%</div>
+  <div class="overlay-controls">
+    <button class="overlay-btn" id="zoom-in">Zoom In</button>
+    <button class="overlay-btn" id="zoom-out">Zoom Out</button>
+    <button class="overlay-btn" id="zoom-reset">Reset</button>
+  </div>
+</div>
+
+<script>
+
+(function() {
+  var rawMarkdown = "# Claude Code 工具系统与状态管理\nchange 14：51\n## 工具系统架构\n\n### 工具接口定义\n\n```mermaid\nclassDiagram\n    class Tool {\n        +string name\n        +string searchHint\n        +ZodSchema inputSchema\n        +ZodSchema outputSchema\n        +number maxResultSizeChars\n        +call(args, context, canUseTool, parentMessage, onProgress) ToolResult\n        +description(input, options) string\n        +prompt(options) string\n        +isEnabled() boolean\n        +isConcurrencySafe(input) boolean\n        +isReadOnly(input) boolean\n        +isDestructive(input) boolean\n        +checkPermissions(input, context) PermissionResult\n        +validateInput(input, context) ValidationResult\n        +getPath(input) string\n        +renderToolUseMessage(input, options) ReactElement\n        +renderToolResultMessage(content, progressMessages, options) ReactElement\n        +renderToolUseProgressMessage(progressMessages, options) ReactElement\n    }\n\n    class ToolResult {\n        +Output data\n        +Message[] newMessages\n        +ContextModifier contextModifier\n    }\n\n    class buildTool {\n        +buildTool~D~(def) Tool~D~\n    }\n\n    class findToolByName {\n        +findToolByName(tools, name) Tool|null\n    }\n\n    class toolMatchesName {\n        +toolMatchesName(tool, name) boolean\n    }\n\n    Tool --> ToolResult : returns\n    buildTool --> Tool : creates\n    findToolByName --> Tool : finds\n    toolMatchesName --> Tool : checks\n```\n\n### 工具注册与发现流程\n\n```mermaid\nflowchart TD\n    subgraph 工具注册\n        A1[\"getAllBaseTools()<br/>获取所有内置工具\"] --> A2[\"filterByEnvironment()<br/>过滤条件性工具<br/>(feature flags, env vars)\"]\n        A2 --> A3[\"getTools(permissionContext)<br/>按权限过滤\"]\n    end\n\n    subgraph MCP工具\n        B1[\"mcpClients<br/>MCP服务器连接\"] --> B2[\"mcp.tools<br/>MCP工具列表\"]\n        B1 --> B3[\"mcp.commands<br/>MCP命令列表\"]\n        B1 --> B4[\"mcp.resources<br/>MCP资源列表\"]\n    end\n\n    subgraph 工具池组装\n        A3 --> C1[\"assembleToolPool()<br/>合并内置+MCP工具\"]\n        B2 --> C1\n        B4 --> C2[\"ListMcpResourcesTool<br/>ReadMcpResourceTool\"]\n        B3 --> C3[\"MCPTool<br/>McpAuthTool\"]\n        C2 --> C1\n        C3 --> C1\n        C1 --> C4[\"filterToolsByDenyRules()<br/>按deny规则过滤\"]\n        C4 --> C5[\"最终工具池<br/>去重(内置优先)\"]\n    end\n\n    C5 --> D[\"传递给 QueryEngine\"]\n    C5 --> E[\"传递给 API 请求构建\"]\n    C5 --> F[\"传递给 StreamingToolExecutor\"]\n```\n\n### 工具分类与全景\n\n```mermaid\ngraph TB\n    subgraph 文件操作工具\n        FR[\"FileReadTool<br/>读取文件内容\"]\n        FE[\"FileEditTool<br/>编辑文件(精确替换)\"]\n        FW[\"FileWriteTool<br/>写入/创建文件\"]\n        GL[\"GlobTool<br/>按模式搜索文件\"]\n        GR[\"GrepTool<br/>搜索文件内容\"]\n        NB[\"NotebookEditTool<br/>编辑Jupyter notebook\"]\n    end\n\n    subgraph 执行工具\n        BASH[\"BashTool<br/>执行shell命令\"]\n        PS[\"PowerShellTool<br/>执行PowerShell命令\"]\n        REPL_T[\"REPLTool<br/>沙箱REPL执行\"]\n        MON[\"MonitorTool<br/>监控命令输出\"]\n    end\n\n    subgraph 网络工具\n        WS[\"WebSearchTool<br/>网络搜索\"]\n        WF[\"WebFetchTool<br/>获取网页内容\"]\n    end\n\n    subgraph 任务管理工具\n        TC[\"TaskCreateTool<br/>创建任务\"]\n        TG[\"TaskGetTool<br/>获取任务详情\"]\n        TU[\"TaskUpdateTool<br/>更新任务状态\"]\n        TL[\"TaskListTool<br/>列出所有任务\"]\n        TS[\"TaskStopTool<br/>停止后台任务\"]\n        TO[\"TaskOutputTool<br/>获取任务输出\"]\n        TW[\"TodoWriteTool<br/>管理Todo列表\"]\n    end\n\n    subgraph 交互工具\n        AQ[\"AskUserQuestionTool<br/>向用户提问\"]\n        EPM[\"EnterPlanModeTool<br/>进入计划模式\"]\n        XPM[\"ExitPlanModeTool<br/>退出计划模式\"]\n        EWT[\"EnterWorktreeTool<br/>创建git worktree\"]\n        XWT[\"ExitWorktreeTool<br/>退出worktree\"]\n    end\n\n    subgraph Agent/团队工具\n        AGT[\"AgentTool<br/>生成子Agent\"]\n        TC2[\"TeamCreateTool<br/>创建Agent团队\"]\n        TD2[\"TeamDeleteTool<br/>删除Agent团队\"]\n        SM[\"SendMessageTool<br/>团队内通信\"]\n    end\n\n    subgraph 调度工具\n        CC[\"CronCreateTool<br/>创建定时任务\"]\n        CD[\"CronDeleteTool<br/>删除定时任务\"]\n        CL[\"CronListTool<br/>列出定时任务\"]\n    end\n\n    subgraph 其他工具\n        SK[\"SkillTool<br/>执行技能/斜杠命令\"]\n        CFG[\"ConfigTool<br/>配置设置\"]\n        BF[\"BriefTool<br/>生成摘要\"]\n        SL[\"SleepTool<br/>等待延迟\"]\n        PN[\"PushNotificationTool<br/>推送通知\"]\n        RT[\"RemoteTriggerTool<br/>远程触发器\"]\n    end\n\n    subgraph MCP工具\n        MRP[\"ListMcpResourcesTool\"]\n        MRD[\"ReadMcpResourceTool\"]\n        MCP_T[\"MCPTool<br/>通用MCP工具\"]\n        MA[\"McpAuthTool<br/>MCP认证\"]\n    end\n\n    subgraph 条件性工具(feature-gated)\n        VP[\"VerifyPlanExecutionTool<br/>CLAUDE_CODE_VERIFY_PLAN\"]\n        OT[\"OverflowTestTool<br/>OVERFLOW_TEST_TOOL\"]\n        CI[\"CtxInspectTool<br/>CONTEXT_COLLAPSE\"]\n        TC3[\"TerminalCaptureTool<br/>TERMINAL_PANEL\"]\n        WB[\"WebBrowserTool<br/>WEB_BROWSER_TOOL\"]\n        SUF[\"SendUserFileTool<br/>KAIROS\"]\n        WF2[\"WorkflowTool<br/>WORKFLOW_SCRIPTS\"]\n        LP[\"ListPeersTool<br/>UDS_INBOX\"]\n    end\n```\n\n### 工具执行并发管理\n\n```mermaid\nflowchart TD\n    START[\"queryLoop 提取 tool_use blocks\"] --> STE[\"StreamingToolExecutor<br/>管理工具并发执行\"]\n\n    STE --> ADD[\"addTool(toolUseBlock)<br/>添加到执行队列\"]\n\n    ADD --> CHECK{\"isConcurrencySafe?<br/>可与其他工具并行?\"}\n\n    CHECK -->|\"是\"| PARALLEL[\"并行执行<br/>processQueue() 并发调度\"]\n    CHECK -->|\"否\"| SERIAL[\"串行执行<br/>等待前序完成\"]\n\n    PARALLEL --> PERM[\"权限检查 canUseTool\"]\n    SERIAL --> PERM\n\n    PERM --> APPROVED{\"权限状态\"}\n\n    APPROVED -->|\"自动允许\"| EXEC[\"tool.call()\"]\n    APPROVED -->|\"需要审批\"| UI[\"PermissionRequest UI\"]\n    APPROVED -->|\"拒绝\"| REJECT[\"返回拒绝消息\"]\n\n    UI --> USER_APPROVE{\"用户确认\"}\n    USER_APPROVE -->|\"允许\"| EXEC\n    USER_APPROVE -->|\"拒绝\"| REJECT\n\n    EXEC --> PROGRESS[\"onProgress 回调<br/>进度更新\"]\n    PROGRESS --> RESULT[\"ToolResult<br/>data + newMessages + contextModifier\"]\n\n    RESULT --> SIZE{\"结果大小检查\"}\n    SIZE -->|\"超过 maxResultSizeChars\"| PERSIST[\"toolResultStorage<br/>持久化到磁盘\"]\n    SIZE -->|\"在限制内\"| KEEP[\"内存中保留\"]\n\n    PERSIST --> ALL_DONE\n    KEEP --> ALL_DONE[\"所有工具完成<br/>getRemainingResults()\"]\n\n    REJECT --> ALL_DONE\n\n    ALL_DONE --> NEXT_TURN[\"递归进入下一轮对话\"]\n```\n\n## 状态管理架构\n\n### 三层状态体系\n\n```mermaid\ngraph TB\n    subgraph 第一层:模块单例状态\n        BS[\"bootstrap/state.ts<br/>模块级单例 STATE\"]\n        BS_CONTENT[\"sessionId<br/>parentSessionId<br/>projectRoot<br/>originalCwd / cwd<br/>meter / counters<br/>eventLogger / tracerProvider<br/>mainLoopModelOverride<br/>lastAPIRequest<br/>cachedClaudeMdContent<br/>isRemoteMode<br/>chromeFlagOverride<br/>sessionBypassPermissionsMode\"]\n    end\n\n    subgraph 第二层:React响应式状态\n        AS[\"AppState.tsx<br/>AppStateProvider + useAppState\"]\n        AS_CONTENT[\"settings<br/>tasks<br/>mcp (clients/tools/commands/resources)<br/>plugins<br/>toolPermissionContext<br/>verbose / mainLoopModel / thinkingEnabled<br/>notifications / elicitation<br/>promptSuggestion / speculation<br/>teamContext / inbox / replContext\"]\n    end\n\n    subgraph 第三层:上下文构建缓存\n        CTX[\"context.ts<br/>memoized providers\"]\n        CTX_CONTENT[\"getSystemContext()<br/>- git status<br/>- system prompt injection<br/><br/>getUserContext()<br/>- CLAUDE.md content<br/>- current date\"]\n    end\n\n    BS -->|\"非React代码访问\"| CORE[\"核心业务逻辑<br/>query.ts, QueryEngine.ts, API层\"]\n    AS -->|\"React组件订阅\"| UI[\"UI层<br/>REPL, Messages, PromptInput\"]\n    CTX -->|\"API调用时构建\"| API_REQ[\"API请求构建<br/>system prompt + user context\"]\n\n    CORE --> BS\n    UI --> AS\n    API_REQ --> CTX\n\n    AS -->|\"onChangeAppState\"| PERSIST[\"持久化到 settings.json\"]\n    BS -->|\"getClaudeMdContent\"| CTX\n```\n\n### AppState Store 机制\n\n```mermaid\nflowchart LR\n    subgraph Store创建\n        CREATE[\"AppStateProvider<br/>创建 Store<AppState>\"] --> INIT[\"初始状态<br/>settings + tasks + mcp + ...\"]\n        INIT --> ON_CHANGE[\"绑定 onChangeAppState<br/>变更回调\"]\n    end\n\n    subgraph 状态读取\n        USE_APP[\"useAppState(selector)<br/>useSyncExternalStore\"] --> SELECT[\"selector(state)<br/>选择性订阅\"]\n        SELECT --> RE_RENDER[\"组件只在selector<br/>结果变化时重渲染\"]\n    end\n\n    subgraph 状态更新\n        SET_APP[\"useSetAppState()\"] --> UPDATE[\"setState(updater)<br/>不可变更新\"]\n        UPDATE --> NOTIFY[\"通知所有 subscribers\"]\n        NOTIFY --> ON_CHANGE_CB[\"onChangeAppState 回调\"]\n        ON_CHANGE_CB --> PERSISTENCE[\"持久化:<br/>- mainLoopModel → settings<br/>- expandedView → settings<br/>- verbose → settings<br/>- permission mode sync\"]\n    end\n\n    subgraph 非React访问\n        RAW[\"useAppStateStore()\"] --> GET[\"store.getState()<br/>直接读取\"]\n        RAW --> SET_RAW[\"store.setState()<br/>直接更新\"]\n    end\n\n    CREATE --> USE_APP\n    CREATE --> SET_APP\n    CREATE --> RAW\n```\n\n### onChangeAppState 回调处理链\n\n```mermaid\nflowchart TD\n    CHANGE[\"AppState 变更\"] --> CB[\"onChangeAppState(newState, prevState)\"]\n\n    CB --> P1{\"权限模式变更?\"}\n    P1 -->|\"是\"| P1A[\"通知CCR和SDK<br/>权限模式同步\"]\n\n    CB --> P2{\"mainLoopModel变更?\"}\n    P2 -->|\"是\"| P2A[\"保存到settings.json<br/>模型持久化\"]\n\n    CB --> P3{\"expandedView变更?\"}\n    P3 -->|\"是\"| P3A[\"保存到settings.json<br/>视图状态持久化\"]\n\n    CB --> P4{\"verbose变更?\"}\n    P4 -->|\"是\"| P4A[\"保存到settings.json<br/>verbose标志持久化\"]\n\n    CB --> P5{\"settings变更?\"}\n    P5 -->|\"是\"| P5A[\"清除认证缓存<br/>重新加载配置\"]\n```\n\n### CLAUDE.md 发现与加载流程\n\n```mermaid\nflowchart TD\n    START[\"getMemoryFiles()\"] --> PRIORITY[\"按优先级加载\"]\n\n    PRIORITY --> M1[\"1. Managed Memory<br/>(Anthropic托管)\"]\n    PRIORITY --> M2[\"2. User Memory<br/>(~/.claude/CLAUDE.md)\"]\n    PRIORITY --> M3[\"3. Project Memory<br/>(项目根目录 CLAUDE.md)\"]\n    PRIORITY --> M4[\"4. Local Memory<br/>(.claude/CLAUDE.md<br/>.claude/rules/*.md)\"]\n\n    M1 --> TRAVERSE[\"遍历CWD向上到根目录<br/>查找所有CLAUDE.md文件\"]\n    M2 --> TRAVERSE\n    M3 --> TRAVERSE\n    M4 --> TRAVERSE\n\n    TRAVERSE --> INCLUDE[\"处理 @include 指令\"]\n    INCLUDE --> FORMAT[\"getClaudeMds()<br/>按类型过滤和格式化\"]\n    FORMAT --> RESULT[\"MemoryFileInfo[]<br/>path + type + content + globs\"]\n\n    RESULT --> CTX[\"注入到 getUserContext()<br/>作为系统上下文的一部分\"]\n```\n\n### UI组件与状态连接\n\n```mermaid\ngraph TB\n    subgraph Root Provider层级\n        FPS[\"FpsMetricsProvider\"] --> STATS[\"StatsProvider\"] --> APP_STATE[\"AppStateProvider\"]\n    end\n\n    subgraph REPL组件树\n        APP_STATE --> REPL_COMP[\"REPL Component\"]\n        REPL_COMP --> PROMPT_IN[\"PromptInput\"]\n        REPL_COMP --> MSG_LIST[\"Messages\"]\n        REPL_COMP --> PERM_REQ[\"PermissionRequest\"]\n        REPL_COMP --> TOOL_USE[\"StreamingToolUses\"]\n    end\n\n    subgraph PromptInput订阅\n        PROMPT_IN --> S1[\"useAppState(s => s.tasks)\"]\n        PROMPT_IN --> S2[\"useAppState(s => s.promptSuggestion)\"]\n        PROMPT_IN --> S3[\"useAppState(s => s.speculation)\"]\n        PROMPT_IN --> S4[\"useAppState(s => s.viewingAgentTaskId)\"]\n        PROMPT_IN --> S5[\"useAppState(s => s.thinkingEnabled)\"]\n        PROMPT_IN --> S6[\"useAppState(s => s.fastMode)\"]\n    end\n\n    subgraph Messages渲染流程\n        MSG_LIST --> NORM[\"normalizeMessages()\"]\n        NORM --> GROUP[\"applyGrouping()\"]\n        GROUP --> VLIST[\"VirtualMessageList<br/>虚拟滚动\"]\n        VLIST --> ROW[\"MessageRow\"]\n        ROW --> BLOCK[\"各种Block渲染器<br/>TextBlock / ToolUseBlock / ToolResultBlock / ThinkingBlock\"]\n    end\n\n    subgraph 权限审批流程\n        PERM_REQ --> CAN_USE[\"canUseTool()\"]\n        CAN_USE --> PERM_CHECK[\"权限规则检查\"]\n        PERM_CHECK --> AUTO_ALLOW{\"自动允许?\"}\n        AUTO_ALLOW -->|\"是\"| EXECUTE[\"直接执行\"]\n        AUTO_ALLOW -->|\"否\"| DIALOG[\"显示权限对话框\"]\n        DIALOG --> USER_DECIDE{\"用户决定\"}\n        USER_DECIDE -->|\"允许\"| EXECUTE\n        USER_DECIDE -->|\"拒绝\"| REJECT[\"返回拒绝\"]\n    end\n\n    FPS --> APP_STATE --> REPL_COMP\n```\n\n### 状态流向总览\n\n```mermaid\nflowchart LR\n    subgraph 输入源\n        USER_INPUT[\"用户输入\"] --> PROMPT_STATE[\"PromptInput<br/>更新AppState\"]\n        CMD_INPUT[\"斜杠命令\"] --> CMD_STATE[\"命令处理<br/>更新AppState\"]\n        API_INPUT[\"API响应\"] --> API_STATE[\"queryLoop<br/>更新AppState\"]\n    end\n\n    subgraph 状态中枢\n        PROMPT_STATE --> APP_STORE[\"AppState Store<br/>中央响应式状态\"]\n        CMD_STATE --> APP_STORE\n        API_STATE --> APP_STORE\n    end\n\n    subgraph 状态消费\n        APP_STORE --> UI_RENDER[\"UI渲染<br/>Messages, PromptInput\"]\n        APP_STORE --> PERSISTENCE[\"持久化<br/>settings.json\"]\n        APP_STORE --> API_BUILD[\"API请求构建<br/>工具池, 系统提示词\"]\n        APP_STORE --> NOTIFICATION[\"通知服务\"]\n        APP_STORE --> MCP_STATE[\"MCP状态同步\"]\n    end\n\n    subgraph Bootstrap状态\n        BOOT_STATE[\"bootstrap/state.ts<br/>模块单例状态\"]\n        BOOT_STATE --> API_BUILD\n        BOOT_STATE --> CTX_BUILD[\"上下文构建<br/>context.ts\"]\n    end\n\n    APP_STORE -->|\"onChangeAppState\"| PERSISTENCE\n    CTX_BUILD --> API_BUILD\n```";
+  var sourceFileName = "tool-and-state.md";
+  var sourceRelPath = "tool-and-state.md";
+  var savePort = 3800;
+
+  var currentTheme = 'light';
+  var currentMode = 'split';
+  var serverConnected = false;
+  var syncScrollLock = null;
+  var mdi = null;
+  var mermaidReady = false;
+  var mermaidTheme = 'default';
+
+  var editor = document.getElementById('editor');
+  var previewBody = document.getElementById('preview-body');
+  var previewPane = document.getElementById('preview-pane');
+  var editorPane = document.getElementById('editor-pane');
+
+  editor.value = rawMarkdown;
+
+  // Check server connection on load
+  checkServerConnection();
+
+  function checkServerConnection() {
+    fetch('http://localhost:' + savePort + '/ping')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          serverConnected = true;
+          var statusEl = document.getElementById('save-status');
+          statusEl.textContent = 'Sync ready';
+          statusEl.className = 'save-status connected';
+          var saveBtn = document.getElementById('save-btn');
+          saveBtn.classList.add('save-ready');
+        }
+      })
+      .catch(function() {
+        var statusEl = document.getElementById('save-status');
+        statusEl.textContent = 'Server offline - use Download';
+      });
+  }
+
+  // Tab key inserts tab character
+  editor.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var start = editor.selectionStart;
+      var end = editor.selectionEnd;
+      editor.value = editor.value.substring(0, start) + '\t' + editor.value.substring(end);
+      editor.selectionStart = editor.selectionEnd = start + 1;
+      if (mdi) triggerRender();
+    }
+  });
+
+  // Ctrl+S save shortcut
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveToFile();
+    }
+  });
+
+  // Theme toggle
+  var themeBtn = document.getElementById('theme-toggle');
+  var hljsLight = document.getElementById('hljs-light-theme');
+  var hljsDark = document.getElementById('hljs-dark-theme');
+
+  themeBtn.addEventListener('click', function() {
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.body.setAttribute('data-theme', currentTheme);
+    themeBtn.textContent = currentTheme === 'light' ? 'Dark' : 'Light';
+    hljsLight.disabled = currentTheme === 'dark';
+    hljsDark.disabled = currentTheme !== 'dark';
+    if (mermaidReady) updateMermaidTheme();
+  });
+
+  // TOC toggle
+  var tocSidebar = document.getElementById('toc-sidebar');
+  var tocToggle = document.getElementById('toc-toggle');
+  var mainContent = document.getElementById('main-content');
+
+  tocToggle.addEventListener('click', function() {
+    tocSidebar.classList.toggle('open');
+    mainContent.classList.toggle('with-toc');
+  });
+
+  // Mode toggle
+  var modeButtons = document.querySelectorAll('.mode-btn');
+  modeButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      setMode(btn.dataset.mode);
+    });
+  });
+
+  function setMode(mode) {
+    currentMode = mode;
+    modeButtons.forEach(function(b) {
+      b.classList.toggle('active-mode', b.dataset.mode === mode);
+    });
+    if (mode === 'split') {
+      editorPane.style.display = 'flex';
+      editorPane.style.width = '50%';
+      previewPane.style.display = 'block';
+      previewPane.style.width = '50%';
+    } else if (mode === 'view') {
+      editorPane.style.display = 'none';
+      previewPane.style.display = 'block';
+      previewPane.style.width = '100%';
+    } else if (mode === 'edit') {
+      editorPane.style.display = 'flex';
+      editorPane.style.width = '100%';
+      previewPane.style.display = 'none';
+    }
+  }
+
+  // Scroll sync
+  editor.addEventListener('scroll', function() {
+    if (syncScrollLock) return;
+    syncScrollLock = 'editor';
+    var ratio = editor.scrollTop / (editor.scrollHeight - editor.clientHeight || 1);
+    previewPane.scrollTop = ratio * (previewPane.scrollHeight - previewPane.clientHeight || 1);
+    setTimeout(function() { syncScrollLock = null; }, 50);
+  });
+
+  previewPane.addEventListener('scroll', function() {
+    if (syncScrollLock) return;
+    syncScrollLock = 'preview';
+    var ratio = previewPane.scrollTop / (previewPane.scrollHeight - previewPane.clientHeight || 1);
+    editor.scrollTop = ratio * (editor.scrollHeight - editor.clientHeight || 1);
+    setTimeout(function() { syncScrollLock = null; }, 50);
+  });
+
+  // File operations — save via local server (syncs both md AND html)
+  var saveBtn = document.getElementById('save-btn');
+  var downloadBtn = document.getElementById('download-btn');
+
+  saveBtn.addEventListener('click', saveToFile);
+  downloadBtn.addEventListener('click', downloadFile);
+
+  function saveToFile() {
+    if (serverConnected) {
+      fetch('http://localhost:' + savePort + '/save?file=' + encodeURIComponent(sourceRelPath), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editor.value })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          if (data.htmlUpdated) {
+            saveBtn.textContent = 'Synced!';
+          } else {
+            saveBtn.textContent = 'Saved!';
+          }
+          setTimeout(function() { saveBtn.textContent = 'Save'; }, 2000);
+        } else {
+          alert('Save failed: ' + (data.error || 'unknown error'));
+        }
+      })
+      .catch(function(e) {
+        alert('Save failed: server unreachable. Use Download instead.');
+      });
+    } else {
+      downloadFile();
+    }
+  }
+
+  function downloadFile() {
+    var blob = new Blob([editor.value], { type: 'text/markdown' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = sourceFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // Render functions
+  var renderTimeout;
+  function triggerRender() {
+    clearTimeout(renderTimeout);
+    renderTimeout = setTimeout(renderPreview, 200);
+  }
+
+  function renderPreview() {
+    if (!mdi) return;
+    rawMarkdown = editor.value;
+    previewBody.innerHTML = mdi.render(rawMarkdown);
+    addCopyButtons();
+    processMermaid();
+    buildTOC();
+  }
+
+  function addCopyButtons() {
+    var preBlocks = previewBody.querySelectorAll('pre');
+    preBlocks.forEach(function(pre) {
+      var code = pre.querySelector('code');
+      if (code && (code.classList.contains('language-mermaid') || code.classList.contains('language-Mermaid'))) return;
+      var btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', function() {
+        var text = code ? code.textContent : pre.textContent;
+        navigator.clipboard.writeText(text).then(function() {
+          btn.textContent = 'Copied!';
+          setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+        });
+      });
+      pre.style.position = 'relative';
+      pre.appendChild(btn);
+    });
+  }
+
+  function processMermaid() {
+    if (!mermaidReady) return;
+    var blocks = previewBody.querySelectorAll('pre code.language-mermaid, pre code.language-Mermaid');
+    blocks.forEach(function(block) {
+      var source = block.textContent;
+      var wrapper = document.createElement('div');
+      wrapper.className = 'mermaid-wrapper';
+      var hint = document.createElement('span');
+      hint.className = 'zoom-hint';
+      hint.textContent = 'Click to zoom';
+      var mermaidDiv = document.createElement('div');
+      mermaidDiv.className = 'mermaid';
+      mermaidDiv.textContent = source.trim();
+      var pre = block.parentElement;
+      pre.parentElement.insertBefore(wrapper, pre);
+      pre.remove();
+      wrapper.appendChild(hint);
+      wrapper.appendChild(mermaidDiv);
+      wrapper.addEventListener('click', function(e) {
+        if (e.target === hint) return;
+        setTimeout(function() {
+          var svg = mermaidDiv.querySelector('svg');
+          if (svg) showOverlay(svg.outerHTML);
+        }, 500);
+      });
+    });
+    setTimeout(function() { mermaid.run({ querySelector: '.mermaid' }); }, 100);
+  }
+
+  function buildTOC() {
+    var headings = previewBody.querySelectorAll('h1, h2, h3, h4');
+    var html = '';
+    headings.forEach(function(h) {
+      var level = h.tagName.toLowerCase();
+      var text = h.textContent;
+      if (!h.id) h.id = 'heading-' + Math.random().toString(36).substr(2, 6);
+      html += '<a class="toc-link toc-' + level + '" href="#' + h.id + '">' + text + '</a>';
+    });
+    tocSidebar.innerHTML = html;
+  }
+
+  function updateMermaidTheme() {
+    mermaidTheme = currentTheme === 'dark' ? 'dark' : 'default';
+    mermaid.initialize({ theme: mermaidTheme });
+    renderPreview();
+  }
+
+  // SVG Zoom overlay
+  var overlay = document.getElementById('svg-overlay');
+  var svgContainer = document.getElementById('svg-container');
+  var zoomLevelEl = document.getElementById('zoom-level');
+  var currentZoom = 1;
+  var panX = 0, panY = 0;
+  var isDragging = false;
+  var dragStartX, dragStartY, panStartX, panStartY;
+
+  function showOverlay(svgSource) {
+    svgContainer.innerHTML = svgSource;
+    currentZoom = 1; panX = 0; panY = 0;
+    updateTransform();
+    overlay.classList.add('active');
+    var svg = svgContainer.querySelector('svg');
+    if (svg) {
+      if (!svg.getAttribute('viewBox')) {
+        var w = parseFloat(svg.getAttribute('width')) || svg.clientWidth || 800;
+        var h = parseFloat(svg.getAttribute('height')) || svg.clientHeight || 600;
+        svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+      }
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      svg.style.maxWidth = '90vw';
+      svg.style.maxHeight = '90vh';
+    }
+  }
+
+  function hideOverlay() { overlay.classList.remove('active'); }
+
+  function updateTransform() {
+    svgContainer.style.transform = 'scale(' + currentZoom + ') translate(' + panX + 'px, ' + panY + 'px)';
+    zoomLevelEl.textContent = Math.round(currentZoom * 100) + '%';
+  }
+
+  document.getElementById('overlay-close').addEventListener('click', hideOverlay);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) hideOverlay(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.classList.contains('active')) hideOverlay();
+  });
+
+  document.getElementById('zoom-in').addEventListener('click', function() {
+    currentZoom = Math.min(currentZoom * 1.25, 10);
+    updateTransform();
+  });
+  document.getElementById('zoom-out').addEventListener('click', function() {
+    currentZoom = Math.max(currentZoom / 1.25, 0.1);
+    updateTransform();
+  });
+  document.getElementById('zoom-reset').addEventListener('click', function() {
+    currentZoom = 1; panX = 0; panY = 0;
+    updateTransform();
+  });
+
+  overlay.addEventListener('wheel', function(e) {
+    if (!overlay.classList.contains('active')) return;
+    e.preventDefault();
+    var delta = e.deltaY > 0 ? 0.85 : 1.18;
+    currentZoom = Math.max(0.1, Math.min(10, currentZoom * delta));
+    updateTransform();
+  });
+
+  svgContainer.addEventListener('mousedown', function(e) {
+    if (overlay.classList.contains('active')) {
+      isDragging = true;
+      dragStartX = e.clientX; dragStartY = e.clientY;
+      panStartX = panX; panStartY = panY;
+      overlay.style.cursor = 'grabbing';
+    }
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    panX = panStartX + (e.clientX - dragStartX) / currentZoom;
+    panY = panStartY + (e.clientY - dragStartY) / currentZoom;
+    updateTransform();
+  });
+  document.addEventListener('mouseup', function() {
+    isDragging = false;
+    overlay.style.cursor = 'grab';
+  });
+
+  // Init: wait for CDN scripts then set up editor listener and render
+  function waitForScripts() {
+    if (typeof markdownit !== 'undefined' && typeof hljs !== 'undefined') {
+      mdi = window.markdownit({
+        html: true, linkify: true, typographer: true,
+        highlight: function(str, lang) {
+          if (lang && window.hljs.getLanguage(lang)) {
+            try { return window.hljs.highlight(str, {language: lang}).value; } catch(e) {}
+          }
+          try { return window.hljs.highlightAuto(str).value; } catch(e) {}
+          return '';
+        }
+      });
+
+      if (typeof mermaid !== 'undefined') {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: mermaidTheme,
+          securityLevel: 'loose',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif'
+        });
+        mermaidReady = true;
+      }
+
+      editor.addEventListener('input', triggerRender);
+      renderPreview();
+      setMode('split');
+    } else {
+      setTimeout(waitForScripts, 100);
+    }
+  }
+
+  waitForScripts();
+})();
+
+</script>
+</body>
+</html>
