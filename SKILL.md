@@ -1,14 +1,16 @@
 ---
 name: md-html
-description: Browse and edit all Markdown files in a directory from one browser page. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder".
+description: Browse and edit all Markdown files in a directory from one browser page. Support Mermaid render and zoom in/out. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder".
 ---
 
 # md-html: Markdown Directory Editor with Sync and Navigation
 
-This skill combines the power of two workflows into one seamless experience:
+md-html is a skill that enables browser-based editing of Markdown files and management of all HTML files within a directory. Support Mermaid render and zoom in/out.
 
-1. **md-live-edit-sync** — renders each `.md` file into an editable, self-contained HTML with live preview and dual-save that syncs edits back to both `.md` and `.html` files on disk
-2. **html-dir-manager** — generates a manager page with a sidebar listing ALL HTML files in a directory tree (both rendered from .md and pre-existing standalone ones), with click-to-switch navigation
+md-html combines two workflows into one seamless experience:
+
+- **md editable on html page** — renders each `.md` file into an editable, self-contained HTML with split-view editor and live preview. Press Ctrl+S to save edits back to both `.md` and `.html` files on disk simultaneously.
+- **Directory manager** — generates a single page with a sidebar listing all HTML files (both rendered from `.md` and pre-existing standalone `.html`), with click-to-switch navigation.
 
 The result: a single browser page where you can navigate between all your markdown documents and existing HTML pages using a sidebar, and edit any markdown-sourced document inline with live preview. Pre-existing HTML files are viewable but not editable through the sync mechanism. Press Ctrl+S to save edits — both the `.md` and `.html` files on disk stay current. No re-rendering, no file picker dialogs, no opening files one by one.
 

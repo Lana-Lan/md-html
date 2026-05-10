@@ -4,11 +4,11 @@ Markdown directory editor with sidebar navigation, live preview, and dual-save s
 
 ## Overview
 
-md-html is a skill that enables browser-based editing of Markdown files and management of all HTML files within a directory.
+md-html is a skill that enables browser-based editing of Markdown files and management of all HTML files within a directory. Support Mermaid render and zoom in/out.
 
 md-html combines two workflows into one seamless experience:
 
-- **Live edit & sync** — renders each `.md` file into an editable, self-contained HTML with split-view editor and live preview. Press Ctrl+S to save edits back to both `.md` and `.html` files on disk simultaneously.
+- **md editable on html page** — renders each `.md` file into an editable, self-contained HTML with split-view editor and live preview. Press Ctrl+S to save edits back to both `.md` and `.html` files on disk simultaneously.
 - **Directory manager** — generates a single page with a sidebar listing all HTML files (both rendered from `.md` and pre-existing standalone `.html`), with click-to-switch navigation.
 
 The result: one browser page where you navigate between all your markdown documents using a sidebar, edit any markdown-sourced document inline with live preview, and keep both `.md` and `.html` files in sync — no file picker dialogs, no opening files one by one.
