@@ -1,5 +1,5 @@
 # Claude Code 工具系统与状态管理
-change 14：51
+change 
 ## 工具系统架构
 
 ### 工具接口定义

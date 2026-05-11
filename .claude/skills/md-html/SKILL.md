@@ -1,6 +1,6 @@
 ---
 name: md-html
-description: Browse and edit all Markdown files in a directory from one browser page. Support Mermaid render and zoom in/out. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder", "md to html", "convert md to html".
+description: Browse and edit all Markdown files in a directory from one browser page with sidebar navigation, live preview, and dual-save sync (.md + .html). All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder", "md to html", "convert md to html".
 ---
 
 # md-html: Markdown Directory Editor with Sync and Navigation

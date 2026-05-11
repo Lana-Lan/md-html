@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const { exec } = require('child_process');
 
 // --- Argument parsing ---
 const args = process.argv.slice(2);
@@ -52,6 +53,7 @@ function scanMdFiles(dir, baseDir) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === 'md-html-manager') continue;
       const sub = scanMdFiles(fullPath, baseDir);
       results.push(...sub);
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
@@ -72,10 +74,13 @@ if (mdFiles.length > 0) {
   console.log(`Found ${mdFiles.length} .md files in "${rootDir}"`);
 }
 
+// --- Output directory for generated HTML files ---
+const mdHtmlManagerDir = path.join(rootDir, 'md-html-manager');
+
 // --- Compute output HTML paths for each md file ---
 const syncedHtmlFiles = mdFiles.map(md => {
   const htmlRelPath = md.relPath.replace(/\.md$/i, '.html');
-  const htmlFullPath = md.fullPath.replace(/\.md$/i, '.html');
+  const htmlFullPath = path.join(mdHtmlManagerDir, htmlRelPath);
   return {
     mdRelPath: md.relPath,
     mdFullPath: md.fullPath,
@@ -93,6 +98,7 @@ function scanHtmlFiles(dir, baseDir, syncedRelPaths) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === 'md-html-manager') continue;
       const sub = scanHtmlFiles(fullPath, baseDir, syncedRelPaths);
       results.push(...sub);
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.html')) {
@@ -1629,7 +1635,13 @@ function generateStaticManagerHtml(serverPort, htmlFilesList, sidebarHtmlContent
 // Combined server (handles both save and file serving)
 // ============================================================
 
-function startCombinedServer(port, rootDir, htmlFilesList) {
+function startCombinedServer(port, rootDir, htmlFilesList, mdHtmlManagerDir) {
+  // Build file map: relPath -> fullPath for correct file serving
+  const fileMap = {};
+  for (const f of htmlFilesList) {
+    fileMap[f.relPath] = f.fullPath;
+  }
+
   const server = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1658,8 +1670,9 @@ function startCombinedServer(port, rootDir, htmlFilesList) {
         res.end('Missing path parameter');
         return;
       }
-      const fullPath = path.join(rootDir, filePath.replace(/\\/g, '/'));
-      // Security: ensure the path is within the root directory
+      // Use file map to locate actual file on disk (syncable in md-html-manager, standalone in source dir)
+      const fullPath = fileMap[filePath] || path.join(rootDir, filePath.replace(/\\/g, '/'));
+      // Security: ensure the path is within rootDir
       if (!fullPath.startsWith(rootDir)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Access denied');
@@ -1697,15 +1710,15 @@ function startCombinedServer(port, rootDir, htmlFilesList) {
           const data = JSON.parse(body);
           const newContent = data.content;
 
-          // Resolve paths
+          // Resolve paths — .md stays in source dir, .html goes to md-html-manager
           const mdFullPath = path.join(rootDir, mdRelPath.replace(/\\/g, '/'));
           const htmlRelPath = mdRelPath.replace(/\.md$/i, '.html');
-          const htmlFullPath = path.join(rootDir, htmlRelPath.replace(/\\/g, '/'));
+          const htmlFullPath = path.join(mdHtmlManagerDir, htmlRelPath.replace(/\\/g, '/'));
           const sourceFilename = path.basename(mdFullPath);
           const fallbackTitle = path.basename(mdFullPath, path.extname(mdFullPath));
 
           // Security check
-          if (!mdFullPath.startsWith(rootDir) || !htmlFullPath.startsWith(rootDir)) {
+          if (!mdFullPath.startsWith(rootDir) || !htmlFullPath.startsWith(mdHtmlManagerDir)) {
             res.writeHead(403, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: false, error: 'Access denied' }));
             return;
@@ -1717,9 +1730,13 @@ function startCombinedServer(port, rootDir, htmlFilesList) {
           // 2. Derive new title
           const newTitle = deriveTitle(newContent, fallbackTitle);
 
-          // 3. Regenerate .html file with updated content
+          // 3. Regenerate .html file with updated content in md-html-manager
           let htmlUpdated = false;
           try {
+            const htmlOutputDir = path.dirname(htmlFullPath);
+            if (!fs.existsSync(htmlOutputDir)) {
+              fs.mkdirSync(htmlOutputDir, { recursive: true });
+            }
             const newHtml = generateEditableHtml(newContent, newTitle, sourceFilename, mdRelPath, port);
             fs.writeFileSync(htmlFullPath, newHtml, 'utf8');
             htmlUpdated = true;
@@ -1753,9 +1770,14 @@ function startCombinedServer(port, rootDir, htmlFilesList) {
 // ============================================================
 
 async function main() {
+  // Step 0: Create md-html-manager output directory
+  if (!fs.existsSync(mdHtmlManagerDir)) {
+    fs.mkdirSync(mdHtmlManagerDir, { recursive: true });
+  }
+
   // Step 1: Generate editable HTML for each .md file (if any)
   if (mdFiles.length > 0) {
-    console.log('\n--- Generating editable HTML files ---');
+    console.log('\n--- Generating editable HTML files in md-html-manager ---');
     for (const md of mdFiles) {
       const mdContent = fs.readFileSync(md.fullPath, 'utf8');
       const fallbackTitle = path.basename(md.fullPath, '.md');
@@ -1763,19 +1785,24 @@ async function main() {
       const sourceFilename = path.basename(md.fullPath);
       const mdRelPath = md.relPath;
 
-      const htmlOutputPath = md.fullPath.replace(/\.md$/i, '.html');
+      const htmlRelPath = mdRelPath.replace(/\.md$/i, '.html');
+      const htmlOutputPath = path.join(mdHtmlManagerDir, htmlRelPath);
+      const htmlOutputDir = path.dirname(htmlOutputPath);
+      if (!fs.existsSync(htmlOutputDir)) {
+        fs.mkdirSync(htmlOutputDir, { recursive: true });
+      }
 
       const placeholderPort = noServer ? 0 : 9999;
 
       const htmlContent = generateEditableHtml(mdContent, title, sourceFilename, mdRelPath, placeholderPort);
       fs.writeFileSync(htmlOutputPath, htmlContent, 'utf8');
-      console.log(`  ${md.relPath} -> ${md.relPath.replace(/\.md$/i, '.html')}`);
+      console.log(`  ${mdRelPath} -> md-html-manager/${htmlRelPath}`);
     }
   }
 
   // Step 2: Re-scan for all html files now (including newly generated ones + standalone ones)
   // This ensures the manager list is complete and excludes index-manager.html
-  const managerOutputPath = outputPath || path.join(rootDir, 'index-manager.html');
+  const managerOutputPath = outputPath || path.join(mdHtmlManagerDir, 'index.manager.html');
   const managerRelPath = path.relative(rootDir, managerOutputPath).replace(/\\/g, '/');
 
   // Refresh standalone scan to pick up newly generated files and exclude the manager itself
@@ -1811,7 +1838,12 @@ async function main() {
         const title = deriveTitle(mdContent, fallbackTitle);
         const sourceFilename = path.basename(md.fullPath);
         const mdRelPath = md.relPath;
-        const htmlOutputPath = md.fullPath.replace(/\.md$/i, '.html');
+        const htmlRelPath = mdRelPath.replace(/\.md$/i, '.html');
+        const htmlOutputPath = path.join(mdHtmlManagerDir, htmlRelPath);
+        const htmlOutputDir = path.dirname(htmlOutputPath);
+        if (!fs.existsSync(htmlOutputDir)) {
+          fs.mkdirSync(htmlOutputDir, { recursive: true });
+        }
 
         const htmlContent = generateEditableHtml(mdContent, title, sourceFilename, mdRelPath, chosenPort);
         fs.writeFileSync(htmlOutputPath, htmlContent, 'utf8');
@@ -1834,7 +1866,7 @@ async function main() {
 
   // Step 6: Start combined server (if not --no-server)
   if (!noServer) {
-    const server = startCombinedServer(chosenPort, rootDir, allHtmlFilesForManager);
+    const server = startCombinedServer(chosenPort, rootDir, allHtmlFilesForManager, mdHtmlManagerDir);
     console.log('\n--- Combined server started ---');
     console.log(`  Content serving + dual-save sync on http://localhost:${chosenPort}`);
     const syncCount = syncedHtmlFiles.length;
@@ -1844,6 +1876,15 @@ async function main() {
       console.log(`Ctrl+S in editable files saves edits to BOTH .md and .html — no re-rendering needed!`);
     }
     console.log(`Close this terminal to stop the server.`);
+
+    // Auto-open manager in browser
+    const managerAbsPath = path.resolve(managerOutputPath);
+    const openCmd = process.platform === 'win32' ? `start "" "${managerAbsPath}"` :
+                    process.platform === 'darwin' ? `open "${managerAbsPath}"` :
+                    `xdg-open "${managerAbsPath}"`;
+    exec(openCmd, (err) => {
+      if (err) console.warn('Could not auto-open browser: ' + err.message);
+    });
 
     process.on('SIGINT', () => {
       server.close();
@@ -1857,6 +1898,15 @@ async function main() {
     const staticCount = freshStandaloneHtmlFiles.length;
     console.log(`\nOpen ${managerOutputPath} in a browser to browse ${allHtmlFilesForManager.length} HTML files (${syncCount} editable, ${staticCount} view-only).`);
     console.log(`Tip: Without --no-server, Ctrl+S syncs edits to both .md and .html automatically.`);
+
+    // Auto-open manager in browser
+    const managerAbsPath = path.resolve(managerOutputPath);
+    const openCmd = process.platform === 'win32' ? `start "" "${managerAbsPath}"` :
+                    process.platform === 'darwin' ? `open "${managerAbsPath}"` :
+                    `xdg-open "${managerAbsPath}"`;
+    exec(openCmd, (err) => {
+      if (err) console.warn('Could not auto-open browser: ' + err.message);
+    });
   }
 }
 
