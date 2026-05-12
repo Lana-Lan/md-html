@@ -15,26 +15,28 @@ The result: one browser page where you navigate between all your markdown docume
 
 ## Features
 
-**Editing (per file):**
-
-- Split-view editor with live Markdown preview
-- View modes: Split / View (read-only) / Edit (editor-only)
-- Dual-save sync: Ctrl+S writes to both `.md` AND `.html`
-- Download fallback when the sync server is offline
+**From md-live-edit-sync (each file's editing page):**
+- Split-view editor with live preview
+- View modes: Split, View (read-only), Edit (editor-only)
+- Dual-save sync: Ctrl+S saves to both `.md` AND `.html`
+- Download fallback when server is offline
+- Tab key support, scroll sync, Ctrl+S shortcut
 - Markdown rendering (markdown-it), code highlighting (highlight.js)
 - Mermaid diagrams with click-to-zoom
+- Mermaid edge interaction: click a connection line in the zoomed overlay to highlight it and view source/target nodes and flow direction
+- Resizable table columns: drag column borders in `<th>` to adjust width; double-click to reset to auto
 - Dark/light mode, auto-generated TOC
-- Tab key support, scroll sync
 
-**Navigation (manager page):**
-
-- Sidebar with directory tree, expand/collapse subdirectories
-- Click-to-switch between all HTML files
-- Badges: ✎ for syncable (from `.md`), ■ for standalone (pre-existing `.html`)
+**From html-dir-manager (the manager page):**
+- Split view: content area + sidebar file list
+- Directory tree sidebar with expand/collapse
+- Click-to-switch navigation between ALL HTML files (syncable + standalone)
+- File badges: ✎ for syncable (from .md), ■ for standalone (pre-existing)
 - Search filter in sidebar
 - Keyboard navigation (arrow keys + Enter)
 - Current file highlight, breadcrumb navigation
-- Dark/light mode, responsive layout, file count and subdirectory badges
+- Dark/light mode, responsive layout
+- File count and subdirectory badges
 
 ## Installation
 

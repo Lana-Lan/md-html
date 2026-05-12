@@ -4,7 +4,7 @@
 
 本项目是 Anthropic 官方 Claude Code CLI 工具的反编译/逆向还原版本。核心目标是恢复主要功能，同时裁剪次要能力。使用 Bun 运行时、React/Ink 终端 UI 框架、Commander.js CLI 框架构建。
 
-change here
+change
 
 and here
 

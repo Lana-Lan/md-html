@@ -439,8 +439,30 @@ body {
 .md-body table th, .md-body table td {
   padding: 6px 13px;
   border: 1px solid var(--table-border);
+  overflow: hidden;
 }
-.md-body table th { font-weight: 600; background: var(--toc-bg); }
+.md-body table th {
+  font-weight: 600;
+  background: var(--toc-bg);
+  position: relative;
+  user-select: none;
+}
+.md-body table th .col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+  background: transparent;
+  transition: background 0.15s;
+}
+.md-body table th .col-resize-handle:hover,
+.md-body table th .col-resize-handle.resizing {
+  background: var(--link);
+  opacity: 0.5;
+}
 .md-body table tr:nth-child(even) { background: var(--toc-bg); }
 
 .md-body img { max-width: 100%; border-radius: 4px; }
@@ -534,6 +556,62 @@ body {
   color: var(--muted);
   z-index: 210;
 }
+
+/* Edge interaction in overlay */
+.svg-overlay svg path[marker-end],
+.svg-overlay svg line[marker-end] {
+  pointer-events: all;
+  cursor: pointer;
+  transition: stroke-width 0.15s, filter 0.15s;
+}
+.svg-overlay svg path[marker-end]:hover,
+.svg-overlay svg line[marker-end]:hover {
+  stroke-width: 3px;
+  filter: drop-shadow(0 0 2px rgba(3, 102, 214, 0.4));
+}
+
+path.mermaid-edge-selected,
+line.mermaid-edge-selected,
+.mermaid-edge-selected > path,
+.mermaid-edge-selected > line {
+  stroke: #ff9800 !important;
+  stroke-width: 4px !important;
+  filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.6)) !important;
+}
+
+.edge-info-panel {
+  position: absolute;
+  bottom: 50px;
+  left: 16px;
+  background: var(--toc-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 210;
+  display: none;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.edge-info-panel.visible { display: block; }
+.edge-info-panel .edge-info-header { font-weight: 600; margin-bottom: 8px; color: var(--heading); }
+.edge-info-panel .edge-info-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.edge-info-panel .edge-info-label { color: var(--muted); min-width: 50px; }
+.edge-info-panel .edge-info-value { color: var(--text); font-weight: 500; }
+.edge-info-panel .edge-info-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--muted);
+  opacity: 0.6;
+  line-height: 1;
+}
+.edge-info-panel .edge-info-close:hover { opacity: 1; }
 
 @media print {
   .topbar, .toc-sidebar, .copy-btn, .zoom-hint, .svg-overlay,
@@ -750,6 +828,7 @@ const EDIT_JS = `
     addCopyButtons();
     processMermaid();
     buildTOC();
+    processTableResize();
   }
 
   function addCopyButtons() {
@@ -845,9 +924,14 @@ const EDIT_JS = `
       svg.style.maxWidth = '90vw';
       svg.style.maxHeight = '90vh';
     }
+    clearEdgeSelection();
+    setupEdgeInteraction();
   }
 
-  function hideOverlay() { overlay.classList.remove('active'); }
+  function hideOverlay() {
+    overlay.classList.remove('active');
+    clearEdgeSelection();
+  }
 
   function updateTransform() {
     svgContainer.style.transform = 'scale(' + currentZoom + ') translate(' + panX + 'px, ' + panY + 'px)';
@@ -899,6 +983,373 @@ const EDIT_JS = `
     isDragging = false;
     overlay.style.cursor = 'grab';
   });
+
+  // --- Mermaid edge click interaction ---
+  var selectedEdge = null;
+
+  function setupEdgeInteraction() {
+    var svg = svgContainer.querySelector('svg');
+    if (!svg) return;
+
+    var edgeCandidates = [];
+
+    // Find paths/lines with directional markers (arrows)
+    svg.querySelectorAll('path[marker-end]').forEach(function(p) {
+      var isInNode = false;
+      var parent = p.parentElement;
+      while (parent && parent !== svg) {
+        var cls = parent.getAttribute('class') || '';
+        if (cls.indexOf('node') !== -1 && cls.indexOf('edge') === -1) {
+          isInNode = true;
+          break;
+        }
+        parent = parent.parentElement;
+      }
+      if (!isInNode) edgeCandidates.push(p);
+    });
+
+    svg.querySelectorAll('line[marker-end]').forEach(function(l) {
+      edgeCandidates.push(l);
+    });
+
+    // Find paths inside edge groups
+    svg.querySelectorAll('g').forEach(function(g) {
+      var cls = g.getAttribute('class') || '';
+      if (cls.indexOf('edgePath') !== -1 || (cls.indexOf('edge') !== -1 && cls.indexOf('edges') === -1 && cls.indexOf('node') === -1)) {
+        g.querySelectorAll('path').forEach(function(p) {
+          if (!edgeCandidates.includes(p) && !p.getAttribute('marker-start')) edgeCandidates.push(p);
+        });
+      }
+    });
+
+    // Build a map of edge labels using Mermaid v11 data-id pattern: L_source_target_index
+    var edgeLabelMap = {};
+    svg.querySelectorAll('g.edgeLabel g.label[data-id]').forEach(function(labelG) {
+      var dataId = labelG.getAttribute('data-id') || '';
+      // Parse L_source_target_index
+      var match = dataId.match(/^L_(.+?)_(.+?)_(\d+)$/);
+      if (match) {
+        var key = match[1] + '_' + match[2] + '_' + match[3];
+        var fo = labelG.querySelector('foreignObject');
+        var labelText = '';
+        if (fo) {
+          var span = fo.querySelector('span.edgeLabel');
+          if (span) labelText = span.textContent.trim();
+        }
+        edgeLabelMap[key] = { sourceKey: match[1], targetKey: match[2], label: labelText };
+      }
+    });
+
+    // Build a map of node display labels from foreignObject/nodeLabel
+    var nodeLabelMap = {};
+    svg.querySelectorAll('g.node').forEach(function(nodeG) {
+      var nodeId = nodeG.getAttribute('id') || '';
+      // Parse node name from id: mermaid-xxx-flowchart-name-index
+      var idMatch = nodeId.match(/flowchart-(.+?)-(\d+)$/);
+      var nodeKey = idMatch ? idMatch[1] : '';
+      var fo = nodeG.querySelector('foreignObject');
+      var displayLabel = '';
+      if (fo) {
+        var span = fo.querySelector('span.nodeLabel');
+        if (span) displayLabel = span.textContent.trim();
+      }
+      if (nodeKey && displayLabel) nodeLabelMap[nodeKey] = displayLabel;
+    });
+
+    edgeCandidates.forEach(function(edge) {
+      edge.style.cursor = 'pointer';
+      edge.style.pointerEvents = 'all';
+
+      edge.addEventListener('mousedown', function(e) {
+        e.stopPropagation();
+      });
+
+      edge.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        selectEdge(edge, svg, edgeLabelMap, nodeLabelMap);
+      });
+    });
+  }
+
+  function selectEdge(edgeEl, svg, edgeLabelMap, nodeLabelMap) {
+    clearEdgeSelection();
+    edgeEl.classList.add('mermaid-edge-selected');
+    var parentG = edgeEl.parentElement;
+    if (parentG && parentG.tagName.toLowerCase() === 'g') parentG.classList.add('mermaid-edge-selected');
+    selectedEdge = edgeEl;
+    var info = extractEdgeInfo(edgeEl, svg, edgeLabelMap, nodeLabelMap);
+    displayEdgeInfo(info);
+  }
+
+  function clearEdgeSelection() {
+    if (selectedEdge) {
+      selectedEdge.classList.remove('mermaid-edge-selected');
+      var parentG = selectedEdge.parentElement;
+      if (parentG && parentG.tagName === 'g') parentG.classList.remove('mermaid-edge-selected');
+      selectedEdge = null;
+    }
+    var panel = document.getElementById('edge-info-panel');
+    if (panel) panel.classList.remove('visible');
+  }
+
+  function extractEdgeInfo(edgeEl, svg, edgeLabelMap, nodeLabelMap) {
+    var source = '', target = '', sourceDisplay = '', targetDisplay = '', label = '', direction = 'forward';
+
+    // Strategy 1: Match edge path with edge label data-id by index
+    // Edge paths in <g class="edgePaths"> correspond by DOM order to edge labels
+    var edgePathsContainer = svg.querySelector('g.edgePaths');
+    if (edgePathsContainer) {
+      var allEdgePaths = edgePathsContainer.querySelectorAll('path[marker-end]');
+      var edgeIndex = -1;
+      for (var i = 0; i < allEdgePaths.length; i++) {
+        if (allEdgePaths[i] === edgeEl) { edgeIndex = i; break; }
+      }
+      if (edgeIndex >= 0) {
+        // Find matching edge label by same index
+        var edgeLabelGs = svg.querySelectorAll('g.edgeLabel');
+        if (edgeIndex < edgeLabelGs.length) {
+          var matchingLabelG = edgeLabelGs[edgeIndex];
+          var innerLabel = matchingLabelG.querySelector('g.label[data-id]');
+          if (innerLabel) {
+            var dataId = innerLabel.getAttribute('data-id') || '';
+            var match = dataId.match(/^L_(.+?)_(.+?)_(\d+)$/);
+            if (match) {
+              source = match[1];
+              target = match[2];
+              sourceDisplay = nodeLabelMap[source] || source;
+              targetDisplay = nodeLabelMap[target] || target;
+              // Get edge label text
+              var fo = innerLabel.querySelector('foreignObject');
+              if (fo) {
+                var span = fo.querySelector('span.edgeLabel');
+                if (span) label = span.textContent.trim();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Strategy 2: Mermaid older version class pattern LS-X LE-Y
+    if (!source || !target) {
+      var parentG = edgeEl.parentElement;
+      var parentClass = parentG ? (parentG.getAttribute('class') || '') : '';
+      var lsMatch = parentClass.match(/LS-([^\\s]+)/);
+      var leMatch = parentClass.match(/LE-([^\\s]+)/);
+      if (lsMatch) source = lsMatch[1];
+      if (leMatch) target = leMatch[1];
+      sourceDisplay = nodeLabelMap[source] || source;
+      targetDisplay = nodeLabelMap[target] || target;
+    }
+
+    // Strategy 3: Find nearest nodes by path position (fallback)
+    if (!source || !target) {
+      try {
+        var d = edgeEl.getAttribute('d') || '';
+        var endpoints = extractPathEndpoints(d);
+        var nodePositions = collectNodePositions(svg);
+        if (endpoints && nodePositions.length > 0) {
+          if (!source) {
+            var nearest = findNearestNodeLabel(endpoints.sx, endpoints.sy, nodePositions);
+            if (nearest) { source = nearest; sourceDisplay = nearest; }
+          }
+          if (!target) {
+            var nearest2 = findNearestNodeLabel(endpoints.ex, endpoints.ey, nodePositions);
+            if (nearest2) { target = nearest2; targetDisplay = nearest2; }
+          }
+        }
+      } catch(e) {}
+    }
+
+    // Determine direction
+    var markerEnd = edgeEl.getAttribute('marker-end') || '';
+    var markerStart = edgeEl.getAttribute('marker-start') || '';
+    if (markerStart && markerEnd) direction = 'bidirectional';
+    else if (markerEnd) {
+      if (markerEnd.indexOf('cross') !== -1 || markerEnd.indexOf('block') !== -1) direction = 'blocked';
+      else direction = 'forward';
+    }
+    else if (markerStart) direction = 'backward';
+    else direction = 'undirected';
+
+    return { source: source, target: target, sourceDisplay: sourceDisplay, targetDisplay: targetDisplay, label: label, direction: direction };
+  }
+
+  function extractPathEndpoints(d) {
+    if (!d) return null;
+    var startMatch = d.match(/^[Mm]\\s*([0-9.e+-]+)\\s*[, ]\\s*([0-9.e+-]+)/);
+    var nums = d.match(/[0-9.e+-]+/g);
+    if (!startMatch || !nums || nums.length < 4) return null;
+    return {
+      sx: parseFloat(startMatch[1]),
+      sy: parseFloat(startMatch[2]),
+      ex: parseFloat(nums[nums.length - 2]),
+      ey: parseFloat(nums[nums.length - 1])
+    };
+  }
+
+  function collectNodePositions(svg) {
+    var positions = [];
+    svg.querySelectorAll('g.node').forEach(function(nodeG) {
+      // Get display label from foreignObject
+      var fo = nodeG.querySelector('foreignObject');
+      var displayLabel = '';
+      if (fo) {
+        var span = fo.querySelector('span.nodeLabel');
+        if (span) displayLabel = span.textContent.trim();
+      }
+      // Fallback: try <text> elements (older Mermaid versions)
+      if (!displayLabel) {
+        var textEl = nodeG.querySelector('text');
+        if (textEl) displayLabel = textEl.textContent.trim();
+      }
+      // Also get node key from id
+      var nodeId = nodeG.getAttribute('id') || '';
+      var idMatch = nodeId.match(/flowchart-(.+?)-(\d+)$/);
+      var nodeKey = idMatch ? idMatch[1] : '';
+
+      if (!displayLabel && !nodeKey) return;
+
+      var label = displayLabel || nodeKey;
+      var transform = nodeG.getAttribute('transform') || '';
+      var tm = transform.match(/translate\\(([^,\\s]+)[,\\s]+([^)]+)\\)/);
+      if (tm) {
+        positions.push({ label: label, x: parseFloat(tm[1]), y: parseFloat(tm[2]) });
+      } else {
+        try {
+          var bbox = nodeG.getBBox();
+          positions.push({ label: label, x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 });
+        } catch(e) {}
+      }
+    });
+    return positions;
+  }
+
+  function findNearestNodeLabel(x, y, nodes) {
+    var best = null, bestDist = Infinity;
+    nodes.forEach(function(n) {
+      var dist = Math.sqrt((x - n.x) * (x - n.x) + (y - n.y) * (y - n.y));
+      if (dist < bestDist) { bestDist = dist; best = n.label; }
+    });
+    return best;
+  }
+
+  function displayEdgeInfo(info) {
+    var panel = document.getElementById('edge-info-panel');
+    if (!panel) return;
+
+    var dirSymbol = '';
+    switch (info.direction) {
+      case 'forward': dirSymbol = ' → '; break;
+      case 'backward': dirSymbol = ' ← '; break;
+      case 'bidirectional': dirSymbol = ' ↔ '; break;
+      case 'blocked': dirSymbol = ' ✖ '; break;
+      default: dirSymbol = ' — '; break;
+    }
+
+    var flowText = (info.sourceDisplay || info.source || '?') + dirSymbol + (info.targetDisplay || info.target || '?');
+
+    panel.innerHTML =
+      '<button class="edge-info-close">&times;</button>' +
+      '<div class="edge-info-header">Connection Detail</div>' +
+      '<div class="edge-info-row"><span class="edge-info-label">From:</span><span class="edge-info-value">' + (info.sourceDisplay || info.source || 'unknown') + '</span></div>' +
+      '<div class="edge-info-row"><span class="edge-info-label">To:</span><span class="edge-info-value">' + (info.targetDisplay || info.target || 'unknown') + '</span></div>' +
+      '<div class="edge-info-row"><span class="edge-info-label">Flow:</span><span class="edge-info-value">' + flowText + '</span></div>' +
+      (info.label ? '<div class="edge-info-row"><span class="edge-info-label">Label:</span><span class="edge-info-value">' + info.label + '</span></div>' : '');
+
+    var closeBtn = panel.querySelector('.edge-info-close');
+    if (closeBtn) closeBtn.addEventListener('click', function() { panel.classList.remove('visible'); });
+
+    panel.classList.add('visible');
+  }
+
+  // --- Resizable table columns ---
+  function processTableResize() {
+    var tables = previewBody.querySelectorAll('table');
+    tables.forEach(function(table) {
+      if (table.dataset.resizeReady) return;
+      table.dataset.resizeReady = '1';
+
+      var ths = table.querySelectorAll('th');
+      if (ths.length === 0) return;
+
+      ths.forEach(function(th) {
+        var handle = document.createElement('div');
+        handle.className = 'col-resize-handle';
+        th.appendChild(handle);
+
+        var startX, startWidth, tableFixed, originalWidths;
+
+        handle.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Capture current widths before switching to fixed layout
+          if (!tableFixed) {
+            originalWidths = [];
+            var allThs = table.querySelectorAll('th');
+            allThs.forEach(function(t) {
+              originalWidths.push(t.offsetWidth);
+            });
+
+            table.style.tableLayout = 'fixed';
+            allThs.forEach(function(t, i) {
+              t.style.width = originalWidths[i] + 'px';
+            });
+
+            var allCells = table.querySelectorAll('td, th');
+            allCells.forEach(function(cell) {
+              cell.style.overflow = 'hidden';
+              cell.style.textOverflow = 'ellipsis';
+              cell.style.whiteSpace = 'nowrap';
+            });
+
+            tableFixed = true;
+          }
+
+          startX = e.pageX;
+          startWidth = th.offsetWidth;
+          handle.classList.add('resizing');
+
+          document.addEventListener('mousemove', onMouseMove);
+          document.addEventListener('mouseup', onMouseUp);
+
+          function onMouseMove(e) {
+            var diff = e.pageX - startX;
+            var newWidth = Math.max(30, startWidth + diff);
+            th.style.width = newWidth + 'px';
+          }
+
+          function onMouseUp() {
+            handle.classList.remove('resizing');
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+          }
+        });
+
+        // Double-click resets to auto
+        handle.addEventListener('dblclick', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          th.style.width = '';
+          var allThs = table.querySelectorAll('th');
+          var allAuto = true;
+          allThs.forEach(function(t) { if (t.style.width) allAuto = false; });
+          if (allAuto) {
+            table.style.tableLayout = '';
+            tableFixed = false;
+            var allCells = table.querySelectorAll('td, th');
+            allCells.forEach(function(cell) {
+              cell.style.overflow = '';
+              cell.style.textOverflow = '';
+              cell.style.whiteSpace = '';
+            });
+          }
+        });
+      });
+    });
+  }
 
   // Init: wait for CDN scripts then set up editor listener and render
   function waitForScripts() {
@@ -1084,6 +1535,7 @@ function generateEditableHtml(mdContent, title, sourceFilename, sourceRelPath, s
     '    <button class="overlay-btn" id="zoom-out">Zoom Out</button>',
     '    <button class="overlay-btn" id="zoom-reset">Reset</button>',
     '  </div>',
+    '  <div class="edge-info-panel" id="edge-info-panel"></div>',
     '</div>',
     '',
     '<script>',

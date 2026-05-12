@@ -1,11 +1,11 @@
 ---
 name: md-html
-description: Browse and edit all Markdown files in a directory from one browser page. Support Mermaid render and zoom in/out. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder", "md to html", "convert md to html".
+description: Browse and edit all Markdown files in a directory from one browser page with sidebar navigation, live preview, and dual-save sync (.md + .html). All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder", "md to html", "convert md to html".
 ---
 
 # md-html: Markdown Directory Editor with Sync and Navigation
 
-md-html renders all Markdown files in a directory into browser-editable HTML pages, then generates a manager page with sidebar navigation for browsing and editing all files. Support Mermaid render and zoom in/out.
+md-html renders all Markdown files in a directory into browser-editable HTML pages, then generates a manager page with sidebar navigation for browsing and editing all files. Support Mermaid render, zoom in/out, edge click interaction, and resizable table columns.
 
 Key design principle: **md produces, html consumes**. All generated HTML files are placed in a dedicated `md-html-manager/` subdirectory (under the user's specified directory), preserving the source directory's structure. The source `.md` files stay untouched in their original locations — only the `md-html-manager/` directory contains generated output. After execution, the manager page auto-opens in the browser.
 
@@ -89,6 +89,8 @@ The HTML templates are substantial (~500 lines for the editable page, ~300 lines
 - Tab key support, scroll sync, Ctrl+S shortcut
 - Markdown rendering (markdown-it), code highlighting (highlight.js)
 - Mermaid diagrams with click-to-zoom
+- Mermaid edge interaction: click a connection line in the zoomed overlay to highlight it and view source/target nodes and flow direction
+- Resizable table columns: drag column borders in `<th>` to adjust width; double-click to reset to auto
 - Dark/light mode, auto-generated TOC
 
 **From html-dir-manager (the manager page):**
