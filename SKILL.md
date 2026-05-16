@@ -1,13 +1,13 @@
 ---
 name: md-html
-description: Browse and edit all Markdown files in a directory from one browser page with sidebar navigation, live preview, and dual-save sync (.md + .html). All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "md directory viewer with editing", "sync edit markdown folder", "md to html", "convert md to html".
+description: Browse and edit all Markdown and HTML files in a directory from one browser page with sidebar navigation, live preview, and sync save. .md files get split-view editing with dual-save (.md + .html). Standalone .html files get contenteditable visual editing and HTML source editing with direct save back to the original file. All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown or HTML files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "edit html files in browser", "html directory editor", "visual html editor", "contenteditable html", "html source editor", "sync edit markdown folder", "md to html", "convert md to html", "edit html and save".
 ---
 
-# md-html: Markdown Directory Editor with Sync and Navigation
+# md-html: Markdown & HTML Directory Editor with Sync and Navigation
 
-md-html renders all Markdown files in a directory into browser-editable HTML pages, then generates a manager page with sidebar navigation for browsing and editing all files. Support Mermaid render, zoom in/out, edge click interaction, and resizable table columns.
+md-html renders all Markdown files in a directory into browser-editable HTML pages, and also wraps standalone .html files with a visual editor. A manager page with sidebar navigation lets you browse and edit all files. Support Mermaid render, zoom in/out, edge click interaction, and resizable table columns.
 
-Key design principle: **md produces, html consumes**. All generated HTML files are placed in a dedicated `md-html-manager/` subdirectory (under the user's specified directory), preserving the source directory's structure. The source `.md` files stay untouched in their original locations — only the `md-html-manager/` directory contains generated output. After execution, the manager page auto-opens in the browser.
+Key design principle: **md produces, html consumes**. All generated HTML files are placed in a dedicated `md-html-manager/` subdirectory (under the user's specified directory), preserving the source directory's structure. The source `.md` files stay untouched in their original locations — only the `md-html-manager/` directory contains generated output. Standalone `.html` files get editing wrappers in `md-html-manager/_standalone/`. After execution, the manager page auto-opens in the browser.
 
 ## What to do
 
@@ -39,10 +39,10 @@ Key design principle: **md produces, html consumes**. All generated HTML files a
    - The manager page is `md-html-manager/index.manager.html` — it auto-opens in the browser
    - The sidebar on the right shows all HTML files organized by subdirectory with expand/collapse
    - Click any file in the sidebar to view/edit it — the content loads in the main area
-   - Syncable files (from .md) show a ✎ badge — they have full editing capability: split-view editor with live preview
-   - Standalone files (pre-existing .html) show a ■ badge — they are viewable but not editable via sync
-   - Press Ctrl+S or click "Save" to sync edits to both `.md` AND `.html` files (only works for syncable files)
-   - The status bar shows "Sync ready (md + html)" when the server is connected
+   - All files show a ✎ badge — both .md-derived and standalone .html files are editable
+   - .md-derived files have split-view editor with live markdown preview; Ctrl+S syncs to both `.md` AND `.html`
+   - Standalone .html files have View/Edit/Source modes; Ctrl+S saves directly to the original `.html` file
+   - The status bar shows "Sync ready" or "Sync ready (html)" when the server is connected
    - Use "Download" as a fallback if the sync server is unreachable
    - Search box at the top of the sidebar filters files by name/path
    - Keyboard navigation: Up/Down arrows move between files, Enter opens the selected file
@@ -55,25 +55,28 @@ All generated HTML files are placed in `<directory>/md-html-manager/`, mirroring
 source-dir/
 ├── subdir/
 │   └── notes.md          (stays in original location)
+│   └── page.html         (stays in original location)
 ├── README.md             (stays in original location)
+├── test.html             (stays in original location)
 └── md-html-manager/      (all generated output goes here)
     ├── subdir/
     │   └── notes.html    (generated from notes.md)
     ├── README.html       (generated from README.md)
+    ├── _standalone/
+    │   ├── subdir/
+    │   │   └── page.html (editing wrapper for page.html)
+    │   └── test.html     (editing wrapper for test.html)
     └── index.manager.html (the manager page)
 ```
 
-Standalone pre-existing `.html` files in the source directory are not moved — they are served directly from their original locations through the server, and appear in the sidebar with a ■ badge.
+Standalone pre-existing `.html` files in the source directory are not moved — their original versions stay in place. Editing wrappers in `md-html-manager/_standalone/` load the original content via the server and save modifications back to the original file.
 
 ## How it works
 
-- **On launch**: The script scans for all `.md` files, generates an editable sync HTML for each one in `md-html-manager/`. It also scans for all pre-existing `.html` files. A single combined server starts on localhost. The browser auto-opens `md-html-manager/index.manager.html`.
-- **In the browser**: The manager page loads the initial file on startup. The sidebar lists all HTML files — syncable ones (from .md) with a ✎ badge, standalone ones (pre-existing) with a ■ badge. Clicking sidebar items loads different files. Syncable files are editable HTML with their own editor and preview panels; standalone files are shown as-is.
-- **On Ctrl+S / Save**: Only works for syncable files. The loaded HTML sends the editor content to the server with a file identifier. The server:
-  1. Writes the content to the source `.md` file (in the original location)
-  2. Regenerates the `.html` file in `md-html-manager/` with the updated content embedded
-  3. Returns `{ ok: true, htmlUpdated: true }` — the save button shows "Synced!"
-- **Result**: Both `.md` (original location) and `.html` (md-html-manager) files are always current. The manager page reflects the latest content because it loads from disk via the server.
+- **On launch**: The script scans for all `.md` files, generates an editable sync HTML for each one in `md-html-manager/`. It also scans for all pre-existing `.html` files and wraps each one with a standalone editing template in `md-html-manager/_standalone/`. A single combined server starts on localhost. The browser auto-opens `md-html-manager/index.manager.html`.
+- **In the browser**: The manager page loads the initial file on startup. The sidebar lists all HTML files — all files now show a ✎ badge (editable). Clicking sidebar items loads different files. .md-derived files are editable HTML with markdown editor and preview panels; standalone .html files have a visual editor with View, Edit, and Source modes.
+- **On Ctrl+S / Save**: Works for both file types. For .md-derived files: the editor content is sent to the server which writes to both `.md` and regenerates `.html`. For standalone .html files: the modified HTML content is sent to the server which writes directly to the original `.html` file. Both return `{ ok: true }` — the save button shows "Synced!"
+- **Result**: For .md-derived files, both `.md` (original location) and `.html` (md-html-manager) are always current. For standalone .html files, the original file is always current. The manager page reflects the latest content because it loads from disk via the server.
 
 ## Why a bundled script
 
@@ -97,12 +100,22 @@ The HTML templates are substantial (~500 lines for the editable page, ~300 lines
 - Split view: content area + sidebar file list
 - Directory tree sidebar with expand/collapse
 - Click-to-switch navigation between ALL HTML files (syncable + standalone)
-- File badges: ✎ for syncable (from .md), ■ for standalone (pre-existing)
+- All files show ✎ badge (all are editable)
 - Search filter in sidebar
 - Keyboard navigation (arrow keys + Enter)
 - Current file highlight, breadcrumb navigation
 - Dark/light mode, responsive layout
 - File count and subdirectory badges
+
+**Standalone HTML editing (for pre-existing .html files):**
+- View mode: read-only rendered preview via iframe
+- Edit mode: contenteditable iframe — click anywhere to edit content directly
+- Source mode: HTML source editor (textarea) + rendered preview (iframe)
+- Ctrl+S saves directly to the original .html file via server sync
+- Download fallback when server is offline
+- Tab key support in source editor, live preview refresh
+- Relative URL resolution via server asset endpoint
+- Dark/light mode
 
 **Output organization:**
 - All generated HTML files placed in `md-html-manager/` subdirectory
@@ -113,7 +126,7 @@ The HTML templates are substantial (~500 lines for the editable page, ~300 lines
 
 - **Single .md file**: Uses the file's parent directory as root. Finds all `.md` files in that directory tree. Also finds all pre-existing `.html` files. The initial file in the manager is the `.html` corresponding to the provided `.md` file.
 - **Directory**: Scans all `.md` files recursively. Generates HTML for each in `md-html-manager/`. Also scans all pre-existing `.html` files. The initial file is the first one found alphabetically, unless `--initial` is specified.
-- **No .md files found**: If there are pre-existing `.html` files, the manager is still generated with only standalone (view-only) files. If there are neither `.md` nor `.html` files, the script reports an error and exits.
+- **No .md files found**: If there are pre-existing `.html` files, the manager is still generated with standalone editable files. If there are neither `.md` nor `.html` files, the script reports an error and exits.
 - **Manager output exclusion**: The `md-html-manager/` directory is automatically excluded from source scanning, preventing generated files from being treated as standalone input.
 - **Re-running**: Running the script multiple times on the same directory regenerates all files in `md-html-manager/`. Previous output is overwritten. Source `.md` files are never modified unless you edit and save from the browser.
 
