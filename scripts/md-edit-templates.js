@@ -490,7 +490,7 @@ const EDIT_JS = `
   var savePort = __SAVE_PORT_PLACEHOLDER__;
 
   var currentTheme = 'light';
-  var currentMode = 'split';
+  var currentMode = 'view';
   var serverConnected = false;
   var syncScrollLock = null;
   var mdi = null;
@@ -1226,7 +1226,7 @@ const EDIT_JS = `
 
       editor.addEventListener('input', triggerRender);
       renderPreview();
-      setMode('split');
+      setMode('view');
     } else {
       setTimeout(waitForScripts, 100);
     }
@@ -1279,8 +1279,8 @@ function generateEditableHtml(mdContent, title, sourceFilename, sourceRelPath, s
     '  </div>',
     '  <div class="topbar-actions">',
     '    <div class="mode-group">',
-    '      <button class="mode-btn active-mode" data-mode="split">Split</button>',
-    '      <button class="mode-btn" data-mode="view">View</button>',
+    '      <button class="mode-btn" data-mode="split">Split</button>',
+    '      <button class="mode-btn active-mode" data-mode="view">View</button>',
     '      <button class="mode-btn" data-mode="edit">Edit</button>',
     '    </div>',
     '    <button class="topbar-btn" id="save-btn">Save</button>',

@@ -264,6 +264,15 @@ const STANDALONE_JS = `
     try {
       var doc = contentIframe.contentDocument || contentIframe.contentWindow.document;
       doc.addEventListener('input', function() { isDirty = true; });
+      // Intercept Ctrl+S inside the iframe so the browser's native "Save As"
+      // dialog doesn't open when the user is editing inside the iframe
+      doc.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          e.stopPropagation();
+          saveToFile();
+        }
+      });
     } catch(e) {}
   });
 
