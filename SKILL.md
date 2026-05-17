@@ -1,6 +1,6 @@
 ---
 name: md-html
-description: Browse and edit all Markdown and HTML files in a directory from one browser page with sidebar navigation, live preview, and sync save. .md files get split-view editing with dual-save (.md + .html). Standalone .html files get contenteditable visual editing and HTML source editing with direct save back to the original file. All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown or HTML files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "edit html files in browser", "html directory editor", "visual html editor", "contenteditable html", "html source editor", "sync edit markdown folder", "md to html", "convert md to html", "edit html and save".
+description: Browse and edit all Markdown and HTML files in a directory from one browser page with sidebar navigation, live preview, and sync save. .md files get split-view editing with dual-save (.md + .html), plus View mode supports direct contenteditable HTML editing with sync save to both .md and .html. Standalone .html files get contenteditable visual editing and HTML source editing with direct save back to the original file. All generated HTML files are organized in a md-html-manager subdirectory, and the manager page auto-opens in your browser after execution. Use when the user wants to manage, navigate, or edit multiple markdown or HTML files in a folder, mentions "markdown directory editor", "edit all md files", "md file browser", "markdown workspace manager", "browse and edit markdown", "edit html files in browser", "html directory editor", "visual html editor", "contenteditable html", "html source editor", "sync edit markdown folder", "md to html", "convert md to html", "edit html and save", "edit rendered html", "direct html editing", "contenteditable preview", "edit html view".
 ---
 
 # md-html: Markdown & HTML Directory Editor with Sync and Navigation
@@ -40,7 +40,7 @@ Key design principle: **md produces, html consumes**. All generated HTML files a
    - The sidebar on the right shows all HTML files organized by subdirectory with expand/collapse
    - Click any file in the sidebar to view/edit it — the content loads in the main area
    - All files show a ✎ badge — both .md-derived and standalone .html files are editable
-   - .md-derived files have split-view editor with live markdown preview; Ctrl+S syncs to both `.md` AND `.html`
+   - .md-derived files have split-view editor with live markdown preview; View mode supports direct contenteditable editing; Ctrl+S syncs to both `.md` AND `.html`
    - Standalone .html files have View/Edit/Source modes; Ctrl+S saves directly to the original `.html` file
    - The status bar shows "Sync ready" or "Sync ready (html)" when the server is connected
    - Use "Download" as a fallback if the sync server is unreachable
@@ -74,8 +74,8 @@ Standalone pre-existing `.html` files in the source directory are not moved — 
 ## How it works
 
 - **On launch**: The script scans for all `.md` files, generates an editable sync HTML for each one in `md-html-manager/`. It also scans for all pre-existing `.html` files and wraps each one with a standalone editing template in `md-html-manager/_standalone/`. A single combined server starts on localhost. The browser auto-opens `md-html-manager/index.manager.html`.
-- **In the browser**: The manager page loads the initial file on startup. The sidebar lists all HTML files — all files now show a ✎ badge (editable). Clicking sidebar items loads different files. .md-derived files are editable HTML with markdown editor and preview panels; standalone .html files have a visual editor with View, Edit, and Source modes.
-- **On Ctrl+S / Save**: Works for both file types. For .md-derived files: the editor content is sent to the server which writes to both `.md` and regenerates `.html`. For standalone .html files: the modified HTML content is sent to the server which writes directly to the original `.html` file. Both return `{ ok: true }` — the save button shows "Synced!"
+- **In the browser**: The manager page loads the initial file on startup. The sidebar lists all HTML files — all files now show a ✎ badge (editable). Clicking sidebar items loads different files. .md-derived files are editable HTML with markdown editor and preview panels; View mode supports direct contenteditable editing of the rendered preview with dual-save to .md and .html; standalone .html files have a visual editor with View, Edit, and Source modes.
+- **On Ctrl+S / Save**: Works for all modes. For .md-derived files in View mode with direct edits: the edited HTML is converted back to markdown using TurndownService, then dual-saved to both `.md` and `.html`. For .md-derived files in Split/Edit mode: the markdown content is dual-saved to both `.md` and `.html`. For standalone .html files: the modified HTML content is sent to the server which writes directly to the original `.html` file. All return `{ ok: true }` — the save button shows "Synced!"
 - **Result**: For .md-derived files, both `.md` (original location) and `.html` (md-html-manager) are always current. For standalone .html files, the original file is always current. The manager page reflects the latest content because it loads from disk via the server.
 
 ## Why a bundled script
@@ -86,8 +86,9 @@ The HTML templates are substantial (~500 lines for the editable page, ~300 lines
 
 **From md-live-edit-sync (each file's editing page):**
 - Split-view editor with live preview
-- View modes: Split, View (read-only), Edit (editor-only)
+- View modes: Split, View (contenteditable for direct HTML editing), Edit (editor-only)
 - Dual-save sync: Ctrl+S saves to both `.md` AND `.html`
+- View mode direct editing: click anywhere in the rendered preview to edit HTML directly; Ctrl+S converts the edited HTML back to markdown using TurndownService, then dual-saves to both `.md` and `.html`. Switching to Split/Edit mode after saving will show the converted markdown and re-rendered preview.
 - Download fallback when server is offline
 - Tab key support, scroll sync, Ctrl+S shortcut
 - Markdown rendering (markdown-it), code highlighting (highlight.js)

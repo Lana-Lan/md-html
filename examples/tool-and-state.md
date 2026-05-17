@@ -1,5 +1,5 @@
 # Claude Code 工具系统与状态管理
-change 
+
 ## 工具系统架构
 
 ### 工具接口定义
@@ -293,7 +293,7 @@ flowchart TD
     P5 -->|"是"| P5A["清除认证缓存<br/>重新加载配置"]
 ```
 
-### CLAUDE.md 发现与加载流程
+### [CLAUDE.md](http://CLAUDE.md) 发现与加载流程
 
 ```mermaid
 flowchart TD

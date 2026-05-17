@@ -317,6 +317,18 @@ body {
 .md-body img { max-width: 100%; border-radius: 4px; }
 .md-body hr { height: 2px; padding: 0; margin: 24px 0; background: var(--border); border: 0; }
 
+/* View mode: contenteditable preview */
+.preview-pane.view-editable { cursor: text; }
+.preview-pane.view-editable .md-body {
+  outline: 1px dashed var(--border);
+  outline-offset: 4px;
+  min-height: 100%;
+}
+.preview-pane.view-editable .md-body:focus-within {
+  outline: 2px solid var(--link);
+  outline-offset: 4px;
+}
+
 .mermaid-wrapper {
   text-align: center;
   margin: 16px 0;
@@ -496,6 +508,8 @@ const EDIT_JS = `
   var mdi = null;
   var mermaidReady = false;
   var mermaidTheme = 'default';
+  var isHtmlDirty = false;
+  var mermaidSources = {};
 
   var editor = document.getElementById('editor');
   var previewBody = document.getElementById('preview-body');
@@ -579,10 +593,26 @@ const EDIT_JS = `
   });
 
   function setMode(mode) {
+    // Warn about unsaved HTML edits when leaving View mode
+    if (currentMode === 'view' && mode !== 'view' && isHtmlDirty) {
+      if (!confirm('You have unsaved direct edits in View mode. Switching mode will re-render from markdown and lose them. Continue?')) {
+        return;
+      }
+    }
+
+    // Disable contentEditable when leaving View mode (if dirty, re-render from md)
+    if (currentMode === 'view' && mode !== 'view') {
+      previewBody.contentEditable = 'false';
+      previewPane.classList.remove('view-editable');
+      isHtmlDirty = false;
+      if (mdi && mode !== 'view') renderPreview();
+    }
+
     currentMode = mode;
     modeButtons.forEach(function(b) {
       b.classList.toggle('active-mode', b.dataset.mode === mode);
     });
+
     if (mode === 'split') {
       editorPane.style.display = 'flex';
       editorPane.style.width = '50%';
@@ -592,12 +622,23 @@ const EDIT_JS = `
       editorPane.style.display = 'none';
       previewPane.style.display = 'block';
       previewPane.style.width = '100%';
+      // View mode: contenteditable for direct HTML editing
+      previewBody.contentEditable = 'true';
+      previewPane.classList.add('view-editable');
+      isHtmlDirty = false;
     } else if (mode === 'edit') {
       editorPane.style.display = 'flex';
       editorPane.style.width = '100%';
       previewPane.style.display = 'none';
     }
   }
+
+  // Track direct edits in View mode
+  previewBody.addEventListener('input', function() {
+    if (currentMode === 'view') {
+      isHtmlDirty = true;
+    }
+  });
 
   // Scroll sync
   editor.addEventListener('scroll', function() {
@@ -624,6 +665,19 @@ const EDIT_JS = `
   downloadBtn.addEventListener('click', downloadFile);
 
   function saveToFile() {
+    // In View mode with direct HTML edits: convert HTML→md then dual-save via /save
+    if (currentMode === 'view' && isHtmlDirty) {
+      var newMd = htmlToMd();
+      editor.value = newMd;
+      isHtmlDirty = false;
+      // Re-render preview from the converted md so it stays consistent
+      if (mdi) {
+        rawMarkdown = newMd;
+        renderPreview();
+      }
+    }
+
+    // Dual-save (works for all modes now)
     if (serverConnected) {
       fetch('http://localhost:' + savePort + '/save?file=' + encodeURIComponent(sourceRelPath), {
         method: 'POST',
@@ -649,6 +703,116 @@ const EDIT_JS = `
     } else {
       downloadFile();
     }
+  }
+
+  // Convert edited preview HTML back to markdown using TurndownService
+  function htmlToMd() {
+    if (typeof TurndownService === 'undefined') return editor.value;
+
+    // Clone preview to clean it without affecting the actual display
+    var clone = previewBody.cloneNode(true);
+
+    // Remove injected elements
+    clone.querySelectorAll('.copy-btn').forEach(function(el) { el.remove(); });
+    clone.querySelectorAll('.zoom-hint').forEach(function(el) { el.remove(); });
+    clone.querySelectorAll('.col-resize-handle').forEach(function(el) { el.remove(); });
+    clone.querySelectorAll('[data-resize-ready]').forEach(function(el) { el.removeAttribute('data-resize-ready'); });
+
+    // Restore mermaid source: replace .mermaid-wrapper with <pre><code class="language-mermaid">
+    clone.querySelectorAll('.mermaid-wrapper').forEach(function(wrapper) {
+      var key = wrapper.dataset.mermaidKey;
+      var source = mermaidSources[key] || '';
+      var pre = document.createElement('pre');
+      var code = document.createElement('code');
+      code.className = 'language-mermaid';
+      code.textContent = source;
+      pre.appendChild(code);
+      wrapper.parentNode.replaceChild(pre, wrapper);
+    });
+
+    // Remove auto-generated heading IDs
+    clone.querySelectorAll('[id^="heading-"]').forEach(function(el) {
+      if (el.id.match(/^heading-[a-z0-9]+$/)) el.removeAttribute('id');
+    });
+
+    var turndown = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      bulletListMarker: '-'
+    });
+
+    // Build regex for newline replacement using RegExp constructor
+    var newlineRegex = new RegExp(String.fromCharCode(10), 'g');
+
+    // Build backtick fence using char codes
+    var fence = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
+
+    // Preserve <code> with language classes as fenced code blocks
+    turndown.addRule('fencedCodeBlock', {
+      filter: function(node) {
+        return node.nodeName === 'PRE' && node.querySelector('code');
+      },
+      replacement: function(content, node) {
+        var code = node.querySelector('code');
+        var lang = (code.className || '').match(/language-(\\S+)/);
+        var langPrefix = lang ? lang[1] : '';
+        var codeText = code.textContent;
+        return '\\n\\n' + fence + langPrefix + '\\n' + codeText + '\\n' + fence + '\\n\\n';
+      }
+    });
+
+    // Preserve HTML tables as markdown tables
+    turndown.addRule('markdownTable', {
+      filter: function(node) {
+        return node.nodeName === 'TABLE';
+      },
+      replacement: function(content, node) {
+        var thead = node.querySelector('thead');
+        var tbody = node.querySelector('tbody');
+        // Collect header cells — use turndown on innerHTML to preserve links etc
+        var headerCells = [];
+        if (thead) {
+          var ths = thead.querySelectorAll('tr:first-child th');
+          if (ths.length === 0) ths = thead.querySelectorAll('th');
+          ths.forEach(function(th) {
+            headerCells.push(turndown.turndown(th.innerHTML).replace(newlineRegex, ' ').trim());
+          });
+        }
+        // Collect body rows
+        var bodyRows = [];
+        var trs = tbody ? tbody.querySelectorAll('tr') : node.querySelectorAll('tr');
+        trs.forEach(function(tr) {
+          // Skip header rows that are direct children (no thead wrapper)
+          if (!thead && tr.querySelector('th') && !tr.querySelector('td')) {
+            if (headerCells.length === 0) {
+              tr.querySelectorAll('th').forEach(function(th) {
+                headerCells.push(turndown.turndown(th.innerHTML).replace(newlineRegex, ' ').trim());
+              });
+            }
+            return;
+          }
+          var cells = [];
+          var tds = tr.querySelectorAll('td');
+          tds.forEach(function(td) {
+            cells.push(turndown.turndown(td.innerHTML).replace(newlineRegex, ' ').trim());
+          });
+          if (cells.length > 0) bodyRows.push(cells);
+        });
+        // Build markdown table
+        if (headerCells.length === 0) return content;
+        var colCount = headerCells.length;
+        var lines = [];
+        lines.push('| ' + headerCells.join(' | ') + ' |');
+        lines.push('| ' + headerCells.map(function() { return '---'; }).join(' | ') + ' |');
+        bodyRows.forEach(function(row) {
+          while (row.length < colCount) row.push('');
+          lines.push('| ' + row.join(' | ') + ' |');
+        });
+        return '\\n\\n' + lines.join('\\n') + '\\n\\n';
+      }
+    });
+
+    return turndown.turndown(clone.innerHTML);
   }
 
   function downloadFile() {
@@ -702,11 +866,14 @@ const EDIT_JS = `
 
   function processMermaid() {
     if (!mermaidReady) return;
+    mermaidSources = {};
     var blocks = previewBody.querySelectorAll('pre code.language-mermaid, pre code.language-Mermaid');
-    blocks.forEach(function(block) {
+    blocks.forEach(function(block, idx) {
       var source = block.textContent;
+      mermaidSources['mermaid-' + idx] = source.trim();
       var wrapper = document.createElement('div');
       wrapper.className = 'mermaid-wrapper';
+      wrapper.dataset.mermaidKey = 'mermaid-' + idx;
       var hint = document.createElement('span');
       hint.className = 'zoom-hint';
       hint.textContent = 'Click to zoom';
@@ -1264,6 +1431,9 @@ function generateEditableHtml(mdContent, title, sourceFilename, sourceRelPath, s
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css" id="hljs-light-theme">',
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" id="hljs-dark-theme" disabled>',
     '<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>',
+    '',
+    '<!-- Turndown (HTML to Markdown converter) -->',
+    '<script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.js"></script>',
     '',
     '<style>',
     EDIT_CSS,

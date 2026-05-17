@@ -1,12 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
+<html lang="en"><head>  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code CLI — How It Works</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&amp;family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
   <style>
 :root {
   /* --- BACKGROUNDS --- */
@@ -697,17 +694,17 @@ body {
   <div class="progress-bar" id="progress"></div>
   <div class="nav-inner">
     <span class="nav-title">Claude Code CLI</span>
-    <div class="nav-dots" id="navDots"></div>
+    <div class="nav-dots" id="navDots"><button class="nav-dot current" data-target="module-1" aria-label="Module 1"></button><button class="nav-dot" data-target="module-2" aria-label="Module 2"></button><button class="nav-dot" data-target="module-3" aria-label="Module 3"></button><button class="nav-dot" data-target="module-4" aria-label="Module 4"></button><button class="nav-dot" data-target="module-5" aria-label="Module 5"></button><button class="nav-dot" data-target="module-6" aria-label="Module 6"></button><button class="nav-dot" data-target="module-7" aria-label="Module 7"></button></div>
   </div>
 </nav>
 
 <!-- MODULE 1: What is Claude Code? -->
 <section class="module" id="module-1">
   <div class="module-content">
-    <header class="module-header animate-in">
+    <header class="module-header animate-in visible">
       <span class="module-number">01</span>
       <h1 class="module-title">Meet Claude Code</h1>
-      <p class="module-subtitle">An AI coding assistant that lives in your terminal</p>
+      <p class="module-subtitle">An AI coding assistant that lives in your terminal</p><p class="module-subtitle">fds</p>
     </header>
 
     <div class="module-body">
@@ -717,11 +714,11 @@ body {
 
         <p>Every time you type <code>bun run dev</code> and start chatting with Claude about your code, a complex machine springs to life. Let me show you what's really happening.</p>
 
-        <div class="hero-visual animate-in">
+        <div class="hero-visual animate-in visible">
           <div class="hero-visual-content">
             <div class="cli-prompt">$ claude</div>
             <div class="cli-output">
-> help me fix this bug in auth.ts<br>
+&gt; help me fix this bug in auth.ts<br>
 <br>
 I'll analyze the auth.ts file and identify the issue...
             </div>
@@ -866,7 +863,7 @@ I'll analyze the auth.ts file and identify the issue...
           <div class="translation-code">
             <span class="translation-label">CODE</span>
             <pre><code><span class="code-line"><span class="code-comment">// Runtime polyfill for bun:bundle</span></span>
-<span class="code-line"><span class="code-keyword">const</span> feature = (_name) => <span class="code-keyword">false</span>;</span>
+<span class="code-line"><span class="code-keyword">const</span> feature = (_name) =&gt; <span class="code-keyword">false</span>;</span>
 <span class="code-line"></span>
 <span class="code-line"><span class="code-comment">// Simulate build-time macros</span></span>
 <span class="code-line">globalThis.MACRO = {</span>
@@ -1206,11 +1203,11 @@ I'll analyze the auth.ts file and identify the issue...
             <span class="translation-label">CODE</span>
             <pre><code><span class="code-line"><span class="code-keyword">export type</span> Tool = {</span>
 <span class="code-line">  name: <span class="code-type">string</span>;</span>
-<span class="code-line">  description: () => <span class="code-type">Promise</span>&lt;<span class="code-type">string</span>&gt;;</span>
+<span class="code-line">  description: () =&gt; <span class="code-type">Promise</span>&lt;<span class="code-type">string</span>&gt;;</span>
 <span class="code-line">  inputSchema: <span class="code-type">ZodType</span>;</span>
-<span class="code-line">  call: (<span class="code-type">args</span>, context) => <span class="code-type">Promise</span>;</span>
-<span class="code-line">  isEnabled: () => <span class="code-type">boolean</span>;</span>
-<span class="code-line">  isReadOnly: (<span class="code-type">input</span>) => <span class="code-type">boolean</span>;</span>
+<span class="code-line">  call: (<span class="code-type">args</span>, context) =&gt; <span class="code-type">Promise</span>;</span>
+<span class="code-line">  isEnabled: () =&gt; <span class="code-type">boolean</span>;</span>
+<span class="code-line">  isReadOnly: (<span class="code-type">input</span>) =&gt; <span class="code-type">boolean</span>;</span>
 <span class="code-line">};</span></code></pre>
           </div>
           <div class="translation-english">
@@ -1654,5 +1651,5 @@ window.addEventListener('load', () => {
 });
 </script>
 
-</body>
-</html>
+
+</body></html>
