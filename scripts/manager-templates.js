@@ -3,7 +3,7 @@ const fs = require('fs');
 function buildTree(files) {
   const tree = {};
   for (const f of files) {
-    const parts = f.relPath.split('/');
+    const parts = (f.displayRelPath || f.relPath).split('/');
     let node = tree;
     for (let i = 0; i < parts.length - 1; i++) {
       if (!node[parts[i]]) node[parts[i]] = {};
@@ -21,8 +21,12 @@ function treeToHtml(node, parentPath) {
     const val = node[key];
     const fullPath = parentPath ? parentPath + '/' + key : key;
     if (val && val.relPath) {
+      const displayPath = val.displayRelPath || val.relPath;
+      const serverPathAttr = (val.displayRelPath && val.displayRelPath !== val.relPath) ? ` data-server-path="${val.relPath}"` : '';
       const badge = val.syncable ? '<span class="file-badge file-badge-sync">&#9999;</span>' : '<span class="file-badge file-badge-static">&#9632;</span>';
-      html += `<div class="file-item" data-path="${val.relPath}" data-syncable="${val.syncable ? '1' : '0'}" tabindex="0">${badge} ${val.name}</div>\n`;
+      const langBadge = val.codeLanguage ? `<span class="file-badge file-badge-lang">${val.codeLanguage}</span>` : '';
+      const displayName = val.displayName || val.name;
+      html += `<div class="file-item" data-path="${displayPath}"${serverPathAttr} data-syncable="${val.syncable ? '1' : '0'}" tabindex="0">${badge}${langBadge} ${displayName}</div>\n`;
     } else {
       const subHtml = treeToHtml(val, fullPath);
       const count = countFiles(val);
@@ -49,7 +53,7 @@ function countFiles(node) {
 }
 
 function generateManagerHtml(serverPort, htmlFilesList, sidebarHtmlContent, initialRelPath, totalFiles, noServer) {
-  const fileDataJson = JSON.stringify(htmlFilesList.map(f => ({ name: f.name, relPath: f.relPath, syncable: f.syncable })));
+  const fileDataJson = JSON.stringify(htmlFilesList.map(f => ({ name: f.displayName || f.name, displayRelPath: f.displayRelPath || f.relPath, relPath: f.relPath, syncable: f.syncable })));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -297,6 +301,18 @@ body {
 }
 .file-badge-sync { color: var(--success); }
 .file-badge-static { color: var(--muted); }
+.file-badge-lang {
+  font-size: 9px;
+  padding: 0px 3px;
+  border-radius: 2px;
+  vertical-align: middle;
+  line-height: 1;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
 .dir-item {}
 
@@ -319,7 +335,7 @@ body {
   transition: transform 0.2s;
   color: var(--muted);
 }
-.dir-item.open .dir-arrow { transform: rotate(90deg); }
+.dir-item.open > .dir-header > .dir-arrow { transform: rotate(90deg); }
 
 .dir-name { overflow: hidden; text-overflow: ellipsis; }
 
@@ -331,11 +347,34 @@ body {
   color: var(--badge-text);
 }
 
+.sidebar-controls {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.sidebar-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+.sidebar-btn:hover { background: var(--hover-bg); color: var(--text); }
+
 .dir-contents {
   display: none;
+  margin-left: 12px;
   padding-left: 8px;
+  border-left: 1px solid var(--border);
 }
-.dir-item.open .dir-contents { display: block; }
+.dir-item.open > .dir-contents { display: block; }
 
 .hidden { display: none !important; }
 
@@ -378,6 +417,10 @@ body {
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <input class="search-input" id="searchInput" type="text" placeholder="Search files..." autocomplete="off">
+      <div class="sidebar-controls">
+        <button class="sidebar-btn" id="expandAllBtn" title="Expand all directories">&#9662; Expand All</button>
+        <button class="sidebar-btn" id="collapseAllBtn" title="Collapse all directories">&#9652; Collapse All</button>
+      </div>
     </div>
     <div class="sidebar-list" id="sidebarList">
       ${sidebarHtmlContent}
@@ -390,6 +433,10 @@ const FILES = ${fileDataJson};
 const SERVER_PORT = ${serverPort || 0};
 const NO_SERVER = ${noServer ? 'true' : 'false'};
 let currentFile = "${initialRelPath}";
+
+// Build path map: display path → server path (for code/standalone files whose display path differs from physical path)
+const PATH_MAP = {};
+FILES.forEach(f => { if (f.displayRelPath && f.displayRelPath !== f.relPath) PATH_MAP[f.displayRelPath] = f.relPath; });
 const serverStatusEl = document.getElementById('serverStatus');
 const breadcrumbPathEl = document.getElementById('breadcrumbPath');
 const contentFrame = document.getElementById('contentFrame');
@@ -440,25 +487,28 @@ checkServer().then(() => loadFile(currentFile));
 setInterval(checkServer, 5000);
 
 // --- Load file content ---
-function loadFile(relPath) {
-  currentFile = relPath;
-  breadcrumbPathEl.textContent = relPath;
+function loadFile(displayPath) {
+  currentFile = displayPath;
+  breadcrumbPathEl.textContent = displayPath;
 
   // Update active state in sidebar
   document.querySelectorAll('.file-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.path === relPath);
+    el.classList.toggle('active', el.dataset.path === displayPath);
   });
 
   // Expand all parent directories of the current file
-  expandParents(relPath);
+  expandParents(displayPath);
+
+  // Resolve server path from display path (code/standalone files have different physical paths)
+  const serverPath = PATH_MAP[displayPath] || displayPath;
 
   if (serverOnline) {
-    contentFrame.src = 'http://localhost:' + SERVER_PORT + '/file?path=' + encodeURIComponent(relPath);
+    contentFrame.src = 'http://localhost:' + SERVER_PORT + '/file?path=' + encodeURIComponent(serverPath);
     iframeWrap.style.display = '';
     emptyState.style.display = 'none';
   } else {
-    // Static mode: try embedded content
-    const embedded = document.getElementById('embedded-' + relPath);
+    // Static mode: try embedded content using display path
+    const embedded = document.getElementById('embedded-' + displayPath);
     if (embedded) {
       const doc = contentFrame.contentDocument || contentFrame.contentWindow.document;
       doc.open();
@@ -501,6 +551,16 @@ sidebarList.addEventListener('click', (e) => {
     const dirItem = dirHeader.closest('.dir-item');
     dirItem.classList.toggle('open');
   }
+});
+
+// --- Expand / Collapse All ---
+document.getElementById('expandAllBtn').addEventListener('click', () => {
+  document.querySelectorAll('.dir-item').forEach(d => d.classList.add('open'));
+});
+document.getElementById('collapseAllBtn').addEventListener('click', () => {
+  document.querySelectorAll('.dir-item').forEach(d => d.classList.remove('open'));
+  // Re-expand only the current file's parents
+  if (currentFile) expandParents(currentFile);
 });
 
 // Keyboard navigation
@@ -561,13 +621,14 @@ function generateStaticManagerHtml(htmlFilesList, sidebarHtmlContent, initialRel
   // Generate manager HTML first
   const managerHtml = generateManagerHtml(0, htmlFilesList, sidebarHtmlContent, initialRelPath, totalFiles, noServer);
 
-  // Embed each editable HTML file's content in a script tag
+  // Embed each editable HTML file's content in a script tag (using display path for IDs)
   let embeddedContent = '';
   for (const f of htmlFilesList) {
     try {
       const content = fs.readFileSync(f.fullPath, 'utf8');
       const escaped = content.replace(/<\/script/gi, '<\\/script');
-      embeddedContent += `<script type="text/plain" id="embedded-${f.relPath}">${escaped}</script>\n`;
+      const displayPath = f.displayRelPath || f.relPath;
+      embeddedContent += `<script type="text/plain" id="embedded-${displayPath}">${escaped}</script>\n`;
     } catch(e) {
       console.warn(`Could not read ${f.relPath}: ${e.message}`);
     }

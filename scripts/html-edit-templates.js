@@ -167,11 +167,11 @@ body {
 
 const STANDALONE_JS = `
 (function() {
-  var sourceFileName = __SOURCE_FILE_NAME_PLACEHOLDER__;
-  var sourceRelPath = __SOURCE_REL_PATH_PLACEHOLDER__;
-  var baseDir = __BASE_DIR_PLACEHOLDER__;
-  var savePort = __SAVE_PORT_PLACEHOLDER__;
-  var initialHtml = __HTML_CONTENT_PLACEHOLDER__;
+  var sourceFileName = {{{{MDHTML_SOURCE_FILE_NAME}}}};
+  var sourceRelPath = {{{{MDHTML_SOURCE_REL_PATH}}}};
+  var baseDir = {{{{MDHTML_BASE_DIR}}}};
+  var savePort = {{{{MDHTML_SAVE_PORT}}}};
+  var initialHtml = {{{{MDHTML_HTML_CONTENT}}}};
   var currentTheme = 'light';
   var currentMode = 'edit';
   var serverConnected = false;
@@ -435,11 +435,11 @@ function generateStandaloneEditableHtml(title, sourceFilename, sourceRelPath, ba
   const escapedBaseDir = escapeForJs(baseDir);
   const escapedInitialHtml = initialHtml ? escapeForJs(initialHtml) : "''";
   const jsFilled = STANDALONE_JS
-    .replace('__SOURCE_FILE_NAME_PLACEHOLDER__', escapedFn)
-    .replace('__SOURCE_REL_PATH_PLACEHOLDER__', escapedRelPath)
-    .replace('__BASE_DIR_PLACEHOLDER__', escapedBaseDir)
-    .replace('__SAVE_PORT_PLACEHOLDER__', String(savePort))
-    .replace('__HTML_CONTENT_PLACEHOLDER__', escapedInitialHtml);
+    .replace('{{{{MDHTML_SOURCE_FILE_NAME}}}}', escapedFn)
+    .replace('{{{{MDHTML_SOURCE_REL_PATH}}}}', escapedRelPath)
+    .replace('{{{{MDHTML_BASE_DIR}}}}', escapedBaseDir)
+    .replace('{{{{MDHTML_SAVE_PORT}}}}', String(savePort))
+    .replace('{{{{MDHTML_HTML_CONTENT}}}}', escapedInitialHtml);
 
   return [
     '<!DOCTYPE html>',

@@ -3,8 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const { deriveTitle } = require('./utils');
 const { generateEditableHtml } = require('./md-edit-templates');
+const { generateCodeEditableHtml } = require('./code-edit-templates');
 
-function startCombinedServer(port, rootDir, htmlFilesList, mdHtmlManagerDir, originalHtmlMap) {
+function startCombinedServer(port, rootDir, htmlFilesList, mdHtmlManagerDir, originalHtmlMap, srcCodeFiles, codeLangMap) {
   // Build file map: relPath -> fullPath for correct file serving
   const fileMap = {};
   for (const f of htmlFilesList) {
@@ -111,6 +112,58 @@ function startCombinedServer(port, rootDir, htmlFilesList, mdHtmlManagerDir, ori
             htmlUpdated = true;
           } catch (htmlErr) {
             console.error('HTML regeneration failed: ' + htmlErr.message);
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, htmlUpdated: htmlUpdated }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
+        }
+      });
+      return;
+    }
+
+    // Save source code (.java/.py/.js) back to original file and regenerate HTML
+    if (req.method === 'POST' && url.pathname === '/save-src') {
+      const srcRelPath = url.searchParams.get('file');
+      if (!srcRelPath) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Missing file parameter' }));
+        return;
+      }
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const newContent = data.content;
+          const srcFullPath = (srcCodeFiles && srcCodeFiles[srcRelPath]) || path.join(rootDir, srcRelPath.replace(/\\/g, '/'));
+          if (!srcFullPath.startsWith(rootDir)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'Access denied' }));
+            return;
+          }
+          // 1. Save to original source file
+          fs.writeFileSync(srcFullPath, newContent, 'utf8');
+
+          // 2. Regenerate HTML file in md-html-manager/_code/
+          let htmlUpdated = false;
+          try {
+            const codeLang = (codeLangMap && codeLangMap[srcRelPath]) || '';
+            const htmlRelPath = srcRelPath.replace(/\.(java|py|js)$/i, '.html');
+            const htmlFullPath = path.join(mdHtmlManagerDir, '_code', htmlRelPath.replace(/\\/g, '/'));
+            const htmlOutputDir = path.dirname(htmlFullPath);
+            if (!fs.existsSync(htmlOutputDir)) {
+              fs.mkdirSync(htmlOutputDir, { recursive: true });
+            }
+            const sourceFilename = path.basename(srcFullPath);
+            const fallbackTitle = path.basename(srcFullPath, path.extname(srcFullPath));
+            const newHtml = generateCodeEditableHtml(newContent, fallbackTitle, sourceFilename, srcRelPath, codeLang, port);
+            fs.writeFileSync(htmlFullPath, newHtml, 'utf8');
+            htmlUpdated = true;
+          } catch (htmlErr) {
+            console.error('Source code HTML regeneration failed: ' + htmlErr.message);
           }
 
           res.writeHead(200, { 'Content-Type': 'application/json' });

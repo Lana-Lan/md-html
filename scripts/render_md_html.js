@@ -7,9 +7,10 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 
-const { deriveTitle, findFreePort } = require('./utils');
+const { deriveTitle, findFreePort, getLanguageFromExt } = require('./utils');
 const { generateEditableHtml } = require('./md-edit-templates');
 const { generateStandaloneEditableHtml } = require('./html-edit-templates');
+const { generateCodeEditableHtml } = require('./code-edit-templates');
 const { buildTree, treeToHtml, generateManagerHtml, generateStaticManagerHtml } = require('./manager-templates');
 const { startCombinedServer } = require('./server');
 
@@ -69,13 +70,43 @@ function scanMdFiles(dir, baseDir) {
 }
 
 const mdFiles = scanMdFiles(rootDir, rootDir);
-if (mdFiles.length === 0 && !fs.readdirSync(rootDir).some(e => e.toLowerCase().endsWith('.html'))) {
-  console.error(`No .md or .html files found in "${rootDir}" or its subdirectories.`);
+
+// --- Scan for source code files (.java, .py, .js) ---
+const CODE_EXTENSIONS = ['.java', '.py', '.js'];
+
+function scanCodeFiles(dir, baseDir) {
+  const results = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'md-html-manager') continue;
+      const sub = scanCodeFiles(fullPath, baseDir);
+      results.push(...sub);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (CODE_EXTENSIONS.includes(ext)) {
+        const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+        results.push({ name: entry.name, relPath, fullPath, ext });
+      }
+    }
+  }
+  return results.sort((a, b) => a.relPath.localeCompare(b.relPath));
+}
+
+const srcCodeFiles = scanCodeFiles(rootDir, rootDir);
+
+if (mdFiles.length === 0 && srcCodeFiles.length === 0 && !fs.readdirSync(rootDir).some(e => e.toLowerCase().endsWith('.html'))) {
+  console.error(`No .md, source code (.java/.py/.js), or .html files found in "${rootDir}" or its subdirectories.`);
   process.exit(1);
 }
 
 if (mdFiles.length > 0) {
   console.log(`Found ${mdFiles.length} .md files in "${rootDir}"`);
+}
+
+if (srcCodeFiles.length > 0) {
+  console.log(`Found ${srcCodeFiles.length} source code files (.java/.py/.js) in "${rootDir}"`);
 }
 
 // --- Output directory for generated HTML files ---
@@ -96,19 +127,21 @@ const syncedHtmlFiles = mdFiles.map(md => {
 });
 
 // --- Scan for existing .html files (not derived from .md) ---
-function scanHtmlFiles(dir, baseDir, syncedRelPaths) {
+function scanHtmlFiles(dir, baseDir, syncedRelPaths, codeRelPaths) {
   const results = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === 'md-html-manager') continue;
-      const sub = scanHtmlFiles(fullPath, baseDir, syncedRelPaths);
+      const sub = scanHtmlFiles(fullPath, baseDir, syncedRelPaths, codeRelPaths);
       results.push(...sub);
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.html')) {
       const relPath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
       // Skip files derived from .md (they're already in syncedHtmlFiles)
       if (syncedRelPaths.has(relPath)) continue;
+      // Skip files derived from source code (.java/.py/.js)
+      if (codeRelPaths && codeRelPaths.has(relPath)) continue;
       // Skip the manager output file itself (will be excluded later)
       results.push({ name: entry.name, relPath, fullPath, syncable: false });
     }
@@ -116,22 +149,50 @@ function scanHtmlFiles(dir, baseDir, syncedRelPaths) {
   return results.sort((a, b) => a.relPath.localeCompare(b.relPath));
 }
 
+// --- Compute output HTML paths for each source code file ---
+const syncedCodeHtmlFiles = srcCodeFiles.map(src => {
+  const htmlRelPath = src.relPath.replace(/\.(java|py|js)$/i, '.html');
+  const htmlFullPath = path.join(mdHtmlManagerDir, '_code', htmlRelPath);
+  const codeLanguage = getLanguageFromExt(src.ext);
+  // relPath uses _code/ prefix for physical file location (avoids naming conflicts with .md-derived HTML)
+  // displayRelPath uses original source path so code files appear at their original directory position in sidebar
+  return {
+    srcRelPath: src.relPath,
+    srcFullPath: src.fullPath,
+    name: path.basename(htmlFullPath),
+    displayName: src.name,
+    relPath: '_code/' + htmlRelPath,
+    displayRelPath: src.relPath,
+    fullPath: htmlFullPath,
+    syncable: true,
+    codeLanguage: codeLanguage,
+    isCodeFile: true
+  };
+});
+
+// codeHtmlNames: flat HTML names that source code files would produce (e.g. "index.html")
+// These are excluded from standalone .html file scan to prevent naming conflicts
+const codeHtmlNames = new Set(srcCodeFiles.map(src => src.relPath.replace(/\.(java|py|js)$/i, '.html')));
+
 const syncedRelPaths = new Set(syncedHtmlFiles.map(f => f.relPath));
-const standaloneHtmlFiles = scanHtmlFiles(rootDir, rootDir, syncedRelPaths);
+const standaloneHtmlFiles = scanHtmlFiles(rootDir, rootDir, syncedRelPaths, codeHtmlNames);
 
 if (standaloneHtmlFiles.length > 0) {
   console.log(`Found ${standaloneHtmlFiles.length} standalone .html files in "${rootDir}"`);
 }
 
 // --- Merge all HTML files for the manager ---
-const allHtmlFiles = [...syncedHtmlFiles, ...standaloneHtmlFiles].sort((a, b) => a.relPath.localeCompare(b.relPath));
+const allHtmlFiles = [...syncedHtmlFiles, ...syncedCodeHtmlFiles, ...standaloneHtmlFiles].sort((a, b) => (a.displayRelPath || a.relPath).localeCompare(b.displayRelPath || b.relPath));
 
-// --- Determine initial file ---
+// --- Determine initial file (using display path for sidebar) ---
 if (!initialFile) {
   if (isFileInput && mdFiles.find(f => f.fullPath === inputPath)) {
     initialFile = mdFiles.find(f => f.fullPath === inputPath).relPath.replace(/\.md$/i, '.html');
+  } else if (isFileInput && srcCodeFiles.find(f => f.fullPath === inputPath)) {
+    const srcFile = srcCodeFiles.find(f => f.fullPath === inputPath);
+    initialFile = srcFile.relPath;  // display path = original source path (e.g., render_js.js)
   } else if (allHtmlFiles.length > 0) {
-    initialFile = allHtmlFiles[0].relPath;
+    initialFile = allHtmlFiles[0].displayRelPath || allHtmlFiles[0].relPath;
   }
 } else {
   initialFile = initialFile.replace(/\\/g, '/');
@@ -197,6 +258,35 @@ async function main() {
     }
   }
 
+  // Step 1c: Generate editable HTML for each source code file (.java/.py/.js)
+  if (srcCodeFiles.length > 0) {
+    console.log('\n--- Generating source code HTML files in md-html-manager/_code ---');
+    const codeDir = path.join(mdHtmlManagerDir, '_code');
+    if (!fs.existsSync(codeDir)) {
+      fs.mkdirSync(codeDir, { recursive: true });
+    }
+    for (const src of srcCodeFiles) {
+      const srcContent = fs.readFileSync(src.fullPath, 'utf8');
+      const codeLanguage = getLanguageFromExt(src.ext);
+      const fallbackTitle = path.basename(src.fullPath, path.extname(src.fullPath));
+      const sourceFilename = path.basename(src.fullPath);
+      const srcRelPath = src.relPath;
+
+      const htmlRelPath = srcRelPath.replace(/\.(java|py|js)$/i, '.html');
+      const htmlOutputPath = path.join(codeDir, htmlRelPath);
+      const htmlOutputDir = path.dirname(htmlOutputPath);
+      if (!fs.existsSync(htmlOutputDir)) {
+        fs.mkdirSync(htmlOutputDir, { recursive: true });
+      }
+
+      const placeholderPort = noServer ? 0 : 9999;
+
+      const htmlContent = generateCodeEditableHtml(srcContent, fallbackTitle, sourceFilename, srcRelPath, codeLanguage, placeholderPort);
+      fs.writeFileSync(htmlOutputPath, htmlContent, 'utf8');
+      console.log(`  ${srcRelPath} -> md-html-manager/_code/${htmlRelPath}`);
+    }
+  }
+
   // Step 2: Re-scan for all html files now (including newly generated ones + standalone ones)
   // This ensures the manager list is complete and excludes index-manager.html
   const managerOutputPath = outputPath || path.join(mdHtmlManagerDir, 'index.manager.html');
@@ -204,7 +294,8 @@ async function main() {
 
   // Refresh standalone scan to pick up newly generated files and exclude the manager itself
   const freshSyncedRelPaths = new Set(syncedHtmlFiles.map(f => f.relPath));
-  const originalStandaloneFiles = scanHtmlFiles(rootDir, rootDir, freshSyncedRelPaths)
+  const freshCodeHtmlNames = new Set(srcCodeFiles.map(src => src.relPath.replace(/\.(java|py|js)$/i, '.html')));
+  const originalStandaloneFiles = scanHtmlFiles(rootDir, rootDir, freshSyncedRelPaths, freshCodeHtmlNames)
     .filter(f => f.relPath !== managerRelPath);
 
   // Build originalHtmlMap for server (relPath -> original fullPath for standalone files)
@@ -220,14 +311,29 @@ async function main() {
     syncable: true
   }));
 
-  const allHtmlFilesForManager = [...syncedHtmlFiles, ...freshStandaloneHtmlFiles].sort((a, b) => a.relPath.localeCompare(b.relPath));
+  // Map source code files to their HTML versions in _code/ (editable)
+  const freshCodeHtmlFiles = syncedCodeHtmlFiles.map(f => ({
+    ...f,
+    fullPath: f.fullPath,
+    syncable: true
+  }));
+
+  // Build srcCodeFilesMap and codeLangMap for server
+  const srcCodeFilesMap = {};
+  const codeLangMap = {};
+  for (const src of srcCodeFiles) {
+    srcCodeFilesMap[src.relPath] = src.fullPath;
+    codeLangMap[src.relPath] = getLanguageFromExt(src.ext);
+  }
+
+  const allHtmlFilesForManager = [...syncedHtmlFiles, ...freshCodeHtmlFiles, ...freshStandaloneHtmlFiles].sort((a, b) => (a.displayRelPath || a.relPath).localeCompare(b.displayRelPath || b.relPath));
 
   if (allHtmlFilesForManager.length === 0) {
     console.error('No HTML files to manage.');
     process.exit(1);
   }
 
-  console.log(`\n--- Total HTML files for manager: ${allHtmlFilesForManager.length} (${syncedHtmlFiles.length} syncable, ${freshStandaloneHtmlFiles.length} standalone) ---`);
+  console.log(`\n--- Total HTML files for manager: ${allHtmlFilesForManager.length} (${syncedHtmlFiles.length} from .md, ${freshCodeHtmlFiles.length} from source code, ${freshStandaloneHtmlFiles.length} standalone) ---`);
 
   // Step 3: Build sidebar HTML for the manager
   const fileTree = buildTree(allHtmlFilesForManager);
@@ -278,6 +384,28 @@ async function main() {
         fs.writeFileSync(standaloneOutputPath, wrappedHtml, 'utf8');
       }
     }
+
+    // Regenerate each source code editable HTML with the actual server port
+    if (srcCodeFiles.length > 0) {
+      console.log('\n--- Updating source code HTML files with server port ' + chosenPort + ' ---');
+      const codeDir = path.join(mdHtmlManagerDir, '_code');
+      for (const src of srcCodeFiles) {
+        const srcContent = fs.readFileSync(src.fullPath, 'utf8');
+        const codeLanguage = getLanguageFromExt(src.ext);
+        const fallbackTitle = path.basename(src.fullPath, path.extname(src.fullPath));
+        const sourceFilename = path.basename(src.fullPath);
+        const srcRelPath = src.relPath;
+        const htmlRelPath = srcRelPath.replace(/\.(java|py|js)$/i, '.html');
+        const htmlOutputPath = path.join(codeDir, htmlRelPath);
+        const htmlOutputDir = path.dirname(htmlOutputPath);
+        if (!fs.existsSync(htmlOutputDir)) {
+          fs.mkdirSync(htmlOutputDir, { recursive: true });
+        }
+
+        const htmlContent = generateCodeEditableHtml(srcContent, fallbackTitle, sourceFilename, srcRelPath, codeLanguage, chosenPort);
+        fs.writeFileSync(htmlOutputPath, htmlContent, 'utf8');
+      }
+    }
   }
 
   // Step 5: Generate manager HTML
@@ -295,13 +423,14 @@ async function main() {
 
   // Step 6: Start combined server (if not --no-server)
   if (!noServer) {
-    const server = startCombinedServer(chosenPort, rootDir, allHtmlFilesForManager, mdHtmlManagerDir, originalHtmlMap);
+    const server = startCombinedServer(chosenPort, rootDir, allHtmlFilesForManager, mdHtmlManagerDir, originalHtmlMap, srcCodeFilesMap, codeLangMap);
     console.log('\n--- Combined server started ---');
     console.log(`  Content serving + dual-save sync on http://localhost:${chosenPort}`);
     const syncCount = syncedHtmlFiles.length;
+    const codeCount = srcCodeFiles.length;
     const staticCount = freshStandaloneHtmlFiles.length;
-    console.log(`\nOpen ${managerOutputPath} in a browser to browse and edit ${allHtmlFilesForManager.length} HTML files (${syncCount} from .md, ${staticCount} standalone).`);
-    console.log(`Ctrl+S saves edits: .md files sync to both .md + .html, standalone .html files sync to original file.`);
+    console.log(`\nOpen ${managerOutputPath} in a browser to browse and edit ${allHtmlFilesForManager.length} HTML files (${syncCount} from .md, ${codeCount} from source code, ${staticCount} standalone).`);
+    console.log(`Ctrl+S saves edits: .md files sync to both .md + .html, source code files sync to original file + .html, standalone .html files sync to original file.`);
     console.log(`Close this terminal to stop the server.`);
 
     // Auto-open manager in browser
@@ -322,9 +451,10 @@ async function main() {
     setInterval(() => {}, 60000);
   } else {
     const syncCount = syncedHtmlFiles.length;
+    const codeCount = srcCodeFiles.length;
     const staticCount = freshStandaloneHtmlFiles.length;
-    console.log(`\nOpen ${managerOutputPath} in a browser to browse ${allHtmlFilesForManager.length} HTML files (${syncCount} from .md, ${staticCount} standalone).`);
-    console.log(`Tip: Without --no-server, Ctrl+S syncs edits automatically — .md files to both .md + .html, standalone .html to original file.`);
+    console.log(`\nOpen ${managerOutputPath} in a browser to browse ${allHtmlFilesForManager.length} HTML files (${syncCount} from .md, ${codeCount} from source code, ${staticCount} standalone).`);
+    console.log(`Tip: Without --no-server, Ctrl+S syncs edits automatically — .md files to both .md + .html, source code files to original + .html, standalone .html to original file.`);
 
     // Auto-open manager in browser
     const managerAbsPath = path.resolve(managerOutputPath);

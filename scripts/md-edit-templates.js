@@ -496,10 +496,10 @@ line.mermaid-edge-selected,
 
 const EDIT_JS = `
 (function() {
-  var rawMarkdown = __MD_CONTENT_PLACEHOLDER__;
-  var sourceFileName = __SOURCE_FILE_NAME_PLACEHOLDER__;
-  var sourceRelPath = __SOURCE_REL_PATH_PLACEHOLDER__;
-  var savePort = __SAVE_PORT_PLACEHOLDER__;
+  var rawMarkdown = {{{{MDHTML_MD_CONTENT}}}};
+  var sourceFileName = {{{{MDHTML_SOURCE_FILE_NAME}}}};
+  var sourceRelPath = {{{{MDHTML_SOURCE_REL_PATH}}}};
+  var savePort = {{{{MDHTML_SAVE_PORT}}}};
 
   var currentTheme = 'light';
   var currentMode = 'view';
@@ -1408,10 +1408,10 @@ function generateEditableHtml(mdContent, title, sourceFilename, sourceRelPath, s
   const escapedFn = escapeForJs(sourceFilename);
   const escapedRelPath = escapeForJs(sourceRelPath);
   const jsFilled = EDIT_JS
-    .replace('__MD_CONTENT_PLACEHOLDER__', escapedMd)
-    .replace('__SOURCE_FILE_NAME_PLACEHOLDER__', escapedFn)
-    .replace('__SOURCE_REL_PATH_PLACEHOLDER__', escapedRelPath)
-    .replace('__SAVE_PORT_PLACEHOLDER__', String(savePort));
+    .replace('{{{{MDHTML_MD_CONTENT}}}}', escapedMd)
+    .replace('{{{{MDHTML_SOURCE_FILE_NAME}}}}', escapedFn)
+    .replace('{{{{MDHTML_SOURCE_REL_PATH}}}}', escapedRelPath)
+    .replace('{{{{MDHTML_SAVE_PORT}}}}', String(savePort));
 
   return [
     '<!DOCTYPE html>',
